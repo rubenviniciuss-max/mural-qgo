@@ -1,0 +1,33 @@
+{
+  // Este arquivo só declara "coisas extras" que o Worker precisa (as
+  // variáveis que não são segredo). O Nitro (ferramenta usada no build)
+  // continua gerando sozinho o restante da configuração — não mexer nisso
+  // aqui evita conflito com o que ele já gera automaticamente.
+  //
+  // Por que este arquivo existe: sem ele, cada novo deploy feito a partir de
+  // um "commit" no GitHub apaga as variáveis/segredos adicionados manualmente
+  // pelo painel da Cloudflare. Colocando aqui as que NÃO são segredo, elas
+  // passam a valer sempre, em todo deploy, sem precisar readicionar na mão.
+  // (Mesma correção já feita no Painel Operacional, no Portal QGO Prime,
+  // no Hub QGO e na Gestão Financeira.)
+  "name": "mural-qgo",
+  "compatibility_date": "2026-09-03",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true,
+      "persist": true
+    }
+  },
+  // Variáveis que NÃO são segredo (dá pra deixar em texto puro no código).
+  // SUPABASE_SERVICE_ROLE_KEY e VAPID_PRIVATE_KEY continuam sendo cadastradas
+  // só pelo painel da Cloudflare (Runtime > Variáveis e segredos), nunca
+  // aqui — essas duas são as únicas realmente sensíveis desta ferramenta.
+  "vars": {
+    "SUPABASE_URL": "https://jjcvhlgqxcpulbjouvrd.supabase.co",
+    "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_CUBrfT5LposQoQBH69akDg_QUiX8SvF",
+    "VAPID_PUBLIC_KEY": "BFIJQmrsvd9kdzBkI5KO3Jw8AB2wwWb8XfCd0TH-2vYwsPjJ_WPTTCAqumTA9cKhLtls-z17uJMFPNPZ2jDskj4",
+    "VAPID_SUBJECT": "mailto:qgoprime@gmail.com"
+  }
+}
