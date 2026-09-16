@@ -1,0 +1,263 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-gold: var(--gold);
+  --color-gold-light: var(--gold-light);
+  --color-silver: var(--silver);
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ===================== TEMA ESCURO (padrão) ===================== */
+:root {
+  --radius: 0.6rem;
+
+  /* Ouro e prata */
+  --gold: #c9a84c;
+  --gold-light: #f0d080;
+  --silver: #c0c0c0;
+  --gradient-gold: linear-gradient(135deg, #c9a84c 0%, #f0d080 50%, #c9a84c 100%);
+  --shadow-premium: 0 1px 2px rgba(0, 0, 0, 0.6), 0 10px 30px rgba(0, 0, 0, 0.45);
+  --glow-gold: 0 0 0 1px rgba(201, 168, 76, 0.55), 0 8px 24px rgba(201, 168, 76, 0.25);
+
+  --background: #0a0a0a;
+  --foreground: #ffffff;
+  --card: #1a1a1a;
+  --card-foreground: #ffffff;
+  --popover: #1c1c1c;
+  --popover-foreground: #ffffff;
+
+  --primary: #c9a84c;
+  --primary-foreground: #0a0a0a;
+  --secondary: #1f1f1f;
+  --secondary-foreground: #f2f2f2;
+  --muted: #1f1f1f;
+  --muted-foreground: #c0c0c0;
+  --accent: #262218;
+  --accent-foreground: #f0d080;
+
+  --destructive: #c0392b;
+  --destructive-foreground: #ffffff;
+  --success: #2d9b4f;
+  --success-foreground: #ffffff;
+  --warning: #d4ac0d;
+  --info: #2471a3;
+  --info-foreground: #ffffff;
+
+  --border: rgba(201, 168, 76, 0.18);
+  --input: #1c1c1c;
+  --ring: #c9a84c;
+}
+
+.dark { color-scheme: dark; }
+
+/* ===================== TEMA CLARO ===================== */
+.light {
+  color-scheme: light;
+  --gold: #c9a84c;
+  --gold-light: #e6c473;
+  --silver: #808080;
+  --gradient-gold: linear-gradient(135deg, #c9a84c 0%, #e6c473 50%, #c9a84c 100%);
+  --shadow-premium: 0 1px 3px rgba(20, 20, 20, 0.08), 0 10px 28px rgba(20, 20, 20, 0.06);
+  --glow-gold: 0 0 0 1px rgba(201, 168, 76, 0.5), 0 8px 22px rgba(201, 168, 76, 0.2);
+
+  --background: #f5f5f5;
+  --foreground: #1a1a1a;
+  --card: #ffffff;
+  --card-foreground: #1a1a1a;
+  --popover: #ffffff;
+  --popover-foreground: #1a1a1a;
+
+  --primary: #b3923a;
+  --primary-foreground: #ffffff;
+  --secondary: #ededed;
+  --secondary-foreground: #1a1a1a;
+  --muted: #ededed;
+  --muted-foreground: #555555;
+  --accent: #f7efd9;
+  --accent-foreground: #6b551b;
+
+  --destructive: #c0392b;
+  --destructive-foreground: #ffffff;
+  --success: #2d9b4f;
+  --success-foreground: #ffffff;
+  --warning: #b3900a;
+  --info: #2471a3;
+  --info-foreground: #ffffff;
+
+  --border: rgba(201, 168, 76, 0.32);
+  --input: #ffffff;
+  --ring: #c9a84c;
+}
+
+@layer base {
+  * { border-color: var(--color-border); }
+  html, body { background-color: var(--color-background); color: var(--color-foreground); }
+  body {
+    font-family: var(--font-sans);
+    background-image:
+      radial-gradient(1000px 500px at 12% -10%, rgba(201, 168, 76, 0.10), transparent 62%),
+      radial-gradient(800px 480px at 100% 0%, rgba(201, 168, 76, 0.06), transparent 58%),
+      linear-gradient(180deg, #0a0a0a 0%, #111111 100%);
+    background-attachment: fixed;
+    min-height: 100vh;
+  }
+  html.light body {
+    background-image:
+      radial-gradient(1000px 500px at 12% -10%, rgba(201, 168, 76, 0.16), transparent 62%),
+      radial-gradient(800px 480px at 100% 0%, rgba(201, 168, 76, 0.10), transparent 58%),
+      linear-gradient(180deg, #fafafa 0%, #f1f1f1 100%);
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-sans);
+  }
+  html:not(.light) h1, html:not(.light) h2, html:not(.light) h3 { color: var(--gold); }
+  html.light h1, html.light h2, html.light h3 { color: #1a1a1a; }
+
+  body { font-size: 14px; font-weight: 400; line-height: 1.5; }
+  label { font-weight: 500; }
+  small { font-size: 13px; font-weight: 400; opacity: 0.7; }
+
+  /* Botões / badges primários com gradiente dourado e brilho no hover */
+  .bg-primary {
+    background-image: var(--gradient-gold);
+    color: #14100a;
+  }
+  .bg-primary:hover { box-shadow: var(--glow-gold); }
+
+  html.light .panel {
+    background: #ffffff;
+    box-shadow: var(--shadow-premium);
+  }
+
+  /* Scrollbar dourada */
+  * { scrollbar-color: var(--gold) transparent; scrollbar-width: thin; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: #0f0f0f; }
+  html.light ::-webkit-scrollbar-track { background: #e9e9e9; }
+  ::-webkit-scrollbar-thumb {
+    background: var(--gradient-gold);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: var(--gold-light); background-clip: padding-box; }
+
+  hr { border-color: color-mix(in oklab, var(--gold) 35%, transparent); }
+  a { text-decoration-color: color-mix(in oklab, var(--gold) 60%, transparent); }
+}
+
+/* ===================== HIERARQUIA DE TÍTULOS (Inter) ===================== */
+html h1 {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  line-height: 1.2;
+}
+@media (min-width: 768px) {
+  html h1 { font-size: 32px; }
+}
+
+html h2 {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  line-height: 1.25;
+}
+@media (min-width: 768px) {
+  html h2 { font-size: 24px; }
+}
+
+html h3 {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  line-height: 1.3;
+}
+
+html h4, html h5, html h6 {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+html .uppercase, html th {
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+html .text-muted-foreground { opacity: 0.85; }
+
+
+@utility panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-premium);
+  transition: box-shadow 180ms ease, border-color 180ms ease;
+  &:hover {
+    border-color: color-mix(in oklab, var(--gold) 45%, transparent);
+    box-shadow: var(--shadow-premium), 0 0 0 1px color-mix(in oklab, var(--gold) 25%, transparent);
+  }
+}
+
+@utility text-gold {
+  color: var(--gold);
+}
+
+@utility text-gold-gradient {
+  background-image: var(--gradient-gold);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@utility heading-display {
+  font-family: var(--font-display);
+  color: var(--gold);
+}
+
+@utility btn-gold {
+  background-image: var(--gradient-gold);
+  color: #14100a;
+  border: 1px solid color-mix(in oklab, var(--gold) 70%, transparent);
+  &:hover { box-shadow: var(--glow-gold); }
+}
+
+@utility gold-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--gold) 55%, transparent), transparent);
+}
