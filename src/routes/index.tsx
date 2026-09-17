@@ -1,12 +1,27 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, redirect, Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/Logo";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/")({
   component: LandingPage,
   head: () => ({
     meta: [{ title: "Mural QGO" }],
   }),
+  // Importante: quando o Hub QGO abre o Mural, ele manda o login pronto num
+  // "#access_token=...&refresh_token=..." grudado nessa mesma URL raiz. Se
+  // essa checagem não rodasse AQUI, bem cedo, a página simplesmente mostrava
+  // os botões "Entrar"/"Acessar o Mural" sem nunca ler esse pedaço da URL —
+  // e assim que a pessoa clicasse num desses links (navegação só no
+  // navegador, sem recarregar a página), o "#access_token=..." era jogado
+  // fora antes do Supabase ter a chance de lê-lo, e a tela de login pedia
+  // e-mail/senha de novo mesmo a pessoa já estando autenticada. Fazendo essa
+  // checagem já na URL raiz, o token é lido e a sessão é criada antes de
+  // qualquer navegação acontecer.
+  beforeLoad: async () => {
+    const { data } = await supabase.auth.getSession();
+    if (data.session) throw redirect({ to: "/app" });
+  },
 });
 
 function LandingPage() {
