@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, Loader2, ChevronDown, ChevronRight, Star, X, CheckCircle2, Pencil } from "lucide-react";
+import { Plus, Trash2, Loader2, ChevronDown, ChevronRight, X, CheckCircle2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 
-type Etapa = { texto: string; concluida: boolean; atual: boolean };
+type Etapa = { texto: string; concluida: boolean };
 
 type Tarefa = {
   id: string;
@@ -27,7 +27,6 @@ function etapasSeguras(valor: unknown): Etapa[] {
     .map((e) => ({
       texto: typeof e.texto === "string" ? e.texto : "",
       concluida: !!e.concluida,
-      atual: !!e.atual,
     }));
 }
 
@@ -194,7 +193,6 @@ function TarefaRow({
   const [editandoTexto, setEditandoTexto] = useState(false);
   const [textoRascunho, setTextoRascunho] = useState(tarefa.texto);
   const [novaEtapa, setNovaEtapa] = useState("");
-  const etapaAtualIdx = tarefa.etapas.findIndex((e) => e.atual);
 
   function iniciarEdicaoTexto() {
     setTextoRascunho(tarefa.texto);
@@ -215,17 +213,12 @@ function TarefaRow({
   function adicionarEtapa() {
     const texto = novaEtapa.trim();
     if (!texto) return;
-    onSalvarEtapas([...tarefa.etapas, { texto, concluida: false, atual: tarefa.etapas.length === 0 }]);
+    onSalvarEtapas([...tarefa.etapas, { texto, concluida: false }]);
     setNovaEtapa("");
   }
 
   function alternarConcluidaEtapa(idx: number) {
     const proximo = tarefa.etapas.map((e, i) => (i === idx ? { ...e, concluida: !e.concluida } : e));
-    onSalvarEtapas(proximo);
-  }
-
-  function marcarAtual(idx: number) {
-    const proximo = tarefa.etapas.map((e, i) => ({ ...e, atual: i === idx }));
     onSalvarEtapas(proximo);
   }
 
@@ -265,12 +258,17 @@ function TarefaRow({
             ) : (
               <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
             )}
-            <span className={`truncate ${tarefa.feita ? "line-through text-success" : ""}`}>
+            <span className={`shrink-0 ${tarefa.feita ? "line-through text-success" : ""}`}>
               {tarefa.texto}
             </span>
-            {etapaAtualIdx >= 0 && (
-              <span className="text-xs text-gold underline shrink-0">
-                · {tarefa.etapas[etapaAtualIdx].texto}
+            {!expandida && tarefa.etapas.length > 0 && (
+              <span className="min-w-0 truncate text-xs text-muted-foreground">
+                {tarefa.etapas.map((e, i) => (
+                  <span key={i} className={e.concluida ? "line-through text-success" : ""}>
+                    {i > 0 ? "; " : ""}
+                    {i + 1}.{e.texto}
+                  </span>
+                ))}
               </span>
             )}
           </button>
@@ -288,9 +286,7 @@ function TarefaRow({
       {expandida && (
         <div className="mt-3 pl-6 space-y-3">
           <div>
-            <p className="text-xs text-muted-foreground mb-1">
-              Etapas — marque a estrela na etapa em que você está agora
-            </p>
+            <p className="text-xs text-muted-foreground mb-1">Etapas, em ordem</p>
             <div className="space-y-1">
               {tarefa.etapas.map((etapa, idx) => (
                 <div key={idx} className="flex items-center gap-2">
@@ -308,19 +304,8 @@ function TarefaRow({
                   ) : (
                     <Checkbox checked={etapa.concluida} onCheckedChange={() => alternarConcluidaEtapa(idx)} />
                   )}
-                  <button
-                    className="shrink-0"
-                    title={etapa.atual ? "Etapa atual" : "Marcar como etapa atual"}
-                    onClick={() => marcarAtual(idx)}
-                  >
-                    <Star
-                      className={`w-3.5 h-3.5 ${etapa.atual ? "fill-gold text-gold" : "text-muted-foreground"}`}
-                    />
-                  </button>
                   <span
-                    className={`flex-1 text-sm ${etapa.concluida ? "line-through text-success" : ""} ${
-                      etapa.atual ? "underline decoration-gold decoration-2 underline-offset-2" : ""
-                    }`}
+                    className={`flex-1 text-sm ${etapa.concluida ? "line-through text-success" : ""}`}
                   >
                     {etapa.texto}
                   </span>
