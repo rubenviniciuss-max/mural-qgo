@@ -19,10 +19,21 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "description", content: "Mural de avisos e tarefas da equipe QGO Prime." },
       { name: "theme-color", content: "#0A0A0A" },
       { name: "robots", content: "noindex, follow" },
+      // Necessários pro iPhone tratar isso como "app instalado" ao adicionar
+      // à Tela de Início — sem isso, o Safari nunca abre em tela cheia (modo
+      // standalone) e as notificações push simplesmente não funcionam no
+      // iOS: lá, push só é permitido depois de instalado, nunca dentro de
+      // uma aba comum do Safari.
+      { name: "apple-mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
+      { name: "apple-mobile-web-app-title", content: "Mural QGO" },
+      { name: "mobile-web-app-capable", content: "yes" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
       { rel: "icon", type: "image/png", href: "/favicon.png" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
+      { rel: "manifest", href: "/manifest.webmanifest" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" },

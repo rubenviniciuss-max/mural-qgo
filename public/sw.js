@@ -18,8 +18,16 @@ self.addEventListener("push", (event) => {
   const title = data.title || "Mural QGO";
   const options = {
     body: data.body || "Novo aviso no mural",
-    icon: "/favicon.png",
+    icon: "/icon-192.png",
     badge: "/favicon.png",
+    // Padrão de vibração tipo "alarme" (curto-curto-longo) — só o Android
+    // obedece isso; o iOS ignora tanto vibração quanto qualquer som
+    // personalizado em notificação push (limitação do próprio sistema, não
+    // dá pra contornar via código: nenhum navegador deixa a página escolher
+    // o arquivo de som tocado quando o app está fechado, só o som padrão do
+    // aparelho).
+    vibrate: [200, 100, 200, 100, 400],
+    requireInteraction: true,
     data: { url: data.url || "/app" },
   };
 
