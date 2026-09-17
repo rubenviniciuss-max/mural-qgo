@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Pin, PinOff, Pencil, Trash2, Send, Loader2, MessageCircle, Users } from "lucide-react";
+import { Pin, PinOff, Pencil, Trash2, Send, Loader2, MessageCircle, Users, ListPlus } from "lucide-react";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
@@ -69,7 +69,10 @@ function primeiroNome(nome: string) {
 export function MuralTab({ access }: { access: MuralAccess }) {
   const qc = useQueryClient();
   const [texto, setTexto] = useState("");
-  const [enviarPara, setEnviarPara] = useState<"todos" | "individual">("todos");
+  // Fica marcado do jeito que a pessoa deixou da última vez que postou — não
+  // reseta depois de enviar, pra dar pra mandar outro aviso ou tarefa pra
+  // mesma pessoa sem precisar marcar de novo toda hora.
+  const [paraTodos, setParaTodos] = useState(true);
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<Aviso | null>(null);
   const [editTexto, setEditTexto] = useState("");
@@ -226,7 +229,7 @@ export function MuralTab({ access }: { access: MuralAccess }) {
     mutationFn: async () => {
       const conteudo = texto.trim();
       if (!conteudo) throw new Error("Escreva algo antes de publicar.");
-      const todos = enviarPara === "todos";
+      const todos = paraTodos;
       const destinatarios = todos ? null : Array.from(selecionados);
       if (!todos && (!destinatarios || destinatarios.length === 0)) {
         throw new Error('Selecione ao menos uma pessoa, ou marque "Enviar para todos".');
@@ -258,8 +261,8 @@ export function MuralTab({ access }: { access: MuralAccess }) {
     },
     onSuccess: () => {
       setTexto("");
-      setSelecionados(new Set());
-      setEnviarPara("todos");
+      // Propositalmente NÃO reseta "paraTodos" nem "selecionados" — a
+      // seleção de destinatários fica igual à do último aviso enviado.
       qc.invalidateQueries({ queryKey: ["mural-avisos"] });
     },
     onError: (e: any) => toast.error(e.message || "Não foi possível publicar"),
@@ -303,6 +306,21 @@ export function MuralTab({ access }: { access: MuralAccess }) {
       qc.invalidateQueries({ queryKey: ["mural-avisos"] });
     },
     onError: (e: any) => toast.error(e.message),
+  });
+
+  const adicionarTarefa = useMutation({
+    mutationFn: async (aviso: Aviso) => {
+      if (!access.userId) throw new Error("Sessão não encontrada.");
+      const { error } = await supabase
+        .from("mural_tarefas")
+        .insert({ user_id: access.userId, texto: aviso.texto });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Adicionado às suas tarefas");
+      qc.invalidateQueries({ queryKey: ["mural-minhas-tarefas", access.userId] });
+    },
+    onError: (e: any) => toast.error(e.message || "Não foi possível adicionar à sua lista de tarefas"),
   });
 
   const comentar = useMutation({
@@ -357,33 +375,38 @@ export function MuralTab({ access }: { access: MuralAccess }) {
         />
 
         <div className="mt-3 space-y-2">
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox
-              checked={enviarPara === "todos"}
-              onCheckedChange={(v) => setEnviarPara(v ? "todos" : "individual")}
-            />
+          <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+            <Checkbox checked={paraTodos} onCheckedChange={(v) => setParaTodos(!!v)} />
             <Users className="w-4 h-4 text-muted-foreground" />
             Enviar para todos
           </label>
 
-          {enviarPara === "individual" && (
-            <div className="flex flex-wrap gap-2 pl-1">
+          <div className={`pl-1 space-y-1 ${paraTodos ? "opacity-50" : ""}`}>
+            <p className="text-xs text-muted-foreground">
+              {paraTodos ? "Ou, se desmarcar \"todos\", escolha quem recebe:" : "Escolha quem recebe:"}
+            </p>
+            <div className="space-y-1">
               {(usuariosQuery.data ?? [])
                 .filter((u) => u.id !== access.userId)
                 .map((u) => (
-                  <label key={u.id} className="flex items-center gap-1.5 text-xs panel px-2 py-1 cursor-pointer">
+                  <label
+                    key={u.id}
+                    className="flex items-center gap-2 text-sm py-1 px-1.5 rounded hover:bg-muted/50 cursor-pointer"
+                  >
                     <Checkbox
                       checked={selecionados.has(u.id)}
                       onCheckedChange={(v) => toggleSelecionado(u.id, !!v)}
                     />
-                    {u.nome}
+                    <span className="font-medium" style={{ color: corDoUsuario(u.id) }}>
+                      {u.nome}
+                    </span>
                   </label>
                 ))}
               {(usuariosQuery.data ?? []).filter((u) => u.id !== access.userId).length === 0 && (
                 <span className="text-xs text-muted-foreground">Ninguém mais ativo no Mural ainda.</span>
               )}
             </div>
-          )}
+          </div>
         </div>
 
         <div className="flex justify-end mt-3">
@@ -470,13 +493,23 @@ export function MuralTab({ access }: { access: MuralAccess }) {
                     </div>
                   )}
 
-                  <button
-                    className="mt-2 flex items-center gap-1 text-xs text-muted-foreground hover:text-gold"
-                    onClick={() => toggleComentarios(aviso.id)}
-                  >
-                    <MessageCircle className="w-3.5 h-3.5" />
-                    {comentarios.length > 0 ? `${comentarios.length} comentário(s)` : "Comentar"}
-                  </button>
+                  <div className="mt-2 flex items-center gap-3 flex-wrap">
+                    <button
+                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-gold"
+                      onClick={() => toggleComentarios(aviso.id)}
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      {comentarios.length > 0 ? `${comentarios.length} comentário(s)` : "Comentar"}
+                    </button>
+                    <button
+                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-gold disabled:opacity-50"
+                      onClick={() => adicionarTarefa.mutate(aviso)}
+                      disabled={!access.userId || adicionarTarefa.isPending}
+                    >
+                      <ListPlus className="w-3.5 h-3.5" />
+                      Adicionar às minhas tarefas
+                    </button>
+                  </div>
 
                   {comentariosAberto && (
                     <div className="mt-2 pl-3 border-l border-border space-y-2">

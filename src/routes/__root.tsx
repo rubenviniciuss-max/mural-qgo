@@ -17,7 +17,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "Mural QGO" },
       { name: "description", content: "Mural de avisos e tarefas da equipe QGO Prime." },
-      { name: "theme-color", content: "#0A0A0A" },
+      { name: "theme-color", content: "#F5F5F5" },
       { name: "robots", content: "noindex, follow" },
       // Necessários pro iPhone tratar isso como "app instalado" ao adicionar
       // à Tela de Início — sem isso, o Safari nunca abre em tela cheia (modo
@@ -62,7 +62,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="pt-BR" className="dark">
+    // Tema claro é o padrão agora (era "dark" antes) — combina com o resto
+    // do ecossistema QGO Prime, que já abre claro por padrão.
+    <html lang="pt-BR" className="light">
       <head><HeadContent /></head>
       <body>{children}<Scripts /></body>
     </html>

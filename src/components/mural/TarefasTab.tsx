@@ -1,12 +1,11 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, Loader2, ChevronDown, ChevronRight, Star, X, CheckCircle2 } from "lucide-react";
+import { Plus, Trash2, Loader2, ChevronDown, ChevronRight, Star, X, CheckCircle2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 
 type Etapa = { texto: string; concluida: boolean; atual: boolean };
@@ -82,9 +81,11 @@ export function TarefasTab({ userId }: { userId: string }) {
     onError: (e: any) => toast.error(e.message),
   });
 
-  const salvarNotas = useMutation({
-    mutationFn: async ({ id, notas }: { id: string; notas: string }) => {
-      const { error } = await supabase.from("mural_tarefas").update({ notas }).eq("id", id);
+  const atualizarTexto = useMutation({
+    mutationFn: async ({ id, texto }: { id: string; texto: string }) => {
+      const limpo = texto.trim();
+      if (!limpo) throw new Error("O nome da tarefa não pode ficar vazio.");
+      const { error } = await supabase.from("mural_tarefas").update({ texto: limpo }).eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["mural-minhas-tarefas", userId] }),
@@ -116,7 +117,7 @@ export function TarefasTab({ userId }: { userId: string }) {
   return (
     <div className="space-y-4 max-w-2xl">
       <p className="text-sm text-muted-foreground">
-        Suas anotações pessoais — só você vê essa lista. Abra uma tarefa pra anotar detalhes ou dividir em etapas.
+        Suas anotações pessoais — só você vê essa lista. Abra uma tarefa pra dividir em etapas.
       </p>
 
       <div className="flex gap-2">
@@ -146,7 +147,7 @@ export function TarefasTab({ userId }: { userId: string }) {
             onToggleExpandida={() => toggleExpandida(t.id)}
             onToggle={() => alternar.mutate(t)}
             onRemove={() => remover.mutate(t.id)}
-            onSalvarNotas={(notas) => salvarNotas.mutate({ id: t.id, notas })}
+            onSalvarTexto={(texto) => atualizarTexto.mutate({ id: t.id, texto })}
             onSalvarEtapas={(etapas) => salvarEtapas.mutate({ id: t.id, etapas })}
           />
         ))}
@@ -163,7 +164,7 @@ export function TarefasTab({ userId }: { userId: string }) {
               onToggleExpandida={() => toggleExpandida(t.id)}
               onToggle={() => alternar.mutate(t)}
               onRemove={() => remover.mutate(t.id)}
-              onSalvarNotas={(notas) => salvarNotas.mutate({ id: t.id, notas })}
+              onSalvarTexto={(texto) => atualizarTexto.mutate({ id: t.id, texto })}
               onSalvarEtapas={(etapas) => salvarEtapas.mutate({ id: t.id, etapas })}
             />
           ))}
@@ -179,7 +180,7 @@ function TarefaRow({
   onToggleExpandida,
   onToggle,
   onRemove,
-  onSalvarNotas,
+  onSalvarTexto,
   onSalvarEtapas,
 }: {
   tarefa: Tarefa;
@@ -187,12 +188,29 @@ function TarefaRow({
   onToggleExpandida: () => void;
   onToggle: () => void;
   onRemove: () => void;
-  onSalvarNotas: (notas: string) => void;
+  onSalvarTexto: (texto: string) => void;
   onSalvarEtapas: (etapas: Etapa[]) => void;
 }) {
-  const [notasRascunho, setNotasRascunho] = useState(tarefa.notas ?? "");
+  const [editandoTexto, setEditandoTexto] = useState(false);
+  const [textoRascunho, setTextoRascunho] = useState(tarefa.texto);
   const [novaEtapa, setNovaEtapa] = useState("");
   const etapaAtualIdx = tarefa.etapas.findIndex((e) => e.atual);
+
+  function iniciarEdicaoTexto() {
+    setTextoRascunho(tarefa.texto);
+    setEditandoTexto(true);
+  }
+
+  function confirmarEdicaoTexto() {
+    const limpo = textoRascunho.trim();
+    if (limpo && limpo !== tarefa.texto) onSalvarTexto(limpo);
+    setEditandoTexto(false);
+  }
+
+  function cancelarEdicaoTexto() {
+    setTextoRascunho(tarefa.texto);
+    setEditandoTexto(false);
+  }
 
   function adicionarEtapa() {
     const texto = novaEtapa.trim();
@@ -225,24 +243,43 @@ function TarefaRow({
         ) : (
           <Checkbox checked={tarefa.feita} onCheckedChange={onToggle} />
         )}
-        <button
-          className="flex-1 min-w-0 flex items-center gap-1.5 text-left"
-          onClick={onToggleExpandida}
-        >
-          {expandida ? (
-            <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-          ) : (
-            <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-          )}
-          <span className={`truncate ${tarefa.feita ? "line-through text-success" : ""}`}>
-            {tarefa.texto}
-          </span>
-          {etapaAtualIdx >= 0 && (
-            <span className="text-xs text-gold underline shrink-0">
-              · {tarefa.etapas[etapaAtualIdx].texto}
+        {editandoTexto ? (
+          <Input
+            autoFocus
+            className="flex-1 h-8"
+            value={textoRascunho}
+            onChange={(e) => setTextoRascunho(e.target.value)}
+            onBlur={confirmarEdicaoTexto}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") confirmarEdicaoTexto();
+              if (e.key === "Escape") cancelarEdicaoTexto();
+            }}
+          />
+        ) : (
+          <button
+            className="flex-1 min-w-0 flex items-center gap-1.5 text-left"
+            onClick={onToggleExpandida}
+          >
+            {expandida ? (
+              <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+            ) : (
+              <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+            )}
+            <span className={`truncate ${tarefa.feita ? "line-through text-success" : ""}`}>
+              {tarefa.texto}
             </span>
-          )}
-        </button>
+            {etapaAtualIdx >= 0 && (
+              <span className="text-xs text-gold underline shrink-0">
+                · {tarefa.etapas[etapaAtualIdx].texto}
+              </span>
+            )}
+          </button>
+        )}
+        {!editandoTexto && (
+          <Button variant="ghost" size="icon" onClick={iniciarEdicaoTexto} title="Editar nome da tarefa">
+            <Pencil className="w-4 h-4 text-muted-foreground" />
+          </Button>
+        )}
         <Button variant="ghost" size="icon" onClick={onRemove}>
           <Trash2 className="w-4 h-4 text-destructive" />
         </Button>
@@ -251,25 +288,15 @@ function TarefaRow({
       {expandida && (
         <div className="mt-3 pl-6 space-y-3">
           <div>
-            <p className="text-xs text-muted-foreground mb-1">Notas</p>
-            <Textarea
-              placeholder="Detalhes, contexto, o que falta..."
-              rows={2}
-              value={notasRascunho}
-              onChange={(e) => setNotasRascunho(e.target.value)}
-              onBlur={() => {
-                if (notasRascunho !== (tarefa.notas ?? "")) onSalvarNotas(notasRascunho);
-              }}
-            />
-          </div>
-
-          <div>
             <p className="text-xs text-muted-foreground mb-1">
               Etapas — marque a estrela na etapa em que você está agora
             </p>
             <div className="space-y-1">
               {tarefa.etapas.map((etapa, idx) => (
                 <div key={idx} className="flex items-center gap-2">
+                  <span className="w-4 text-xs text-muted-foreground text-right shrink-0 tabular-nums">
+                    {idx + 1}.
+                  </span>
                   {etapa.concluida ? (
                     <button
                       onClick={() => alternarConcluidaEtapa(idx)}
