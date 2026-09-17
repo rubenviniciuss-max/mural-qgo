@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, Loader2, ChevronDown, ChevronRight, Star, X } from "lucide-react";
+import { Plus, Trash2, Loader2, ChevronDown, ChevronRight, Star, X, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
@@ -216,9 +216,15 @@ function TarefaRow({
   }
 
   return (
-    <div className="panel p-3">
+    <div className={`panel p-3 ${tarefa.feita ? "border-success/40" : ""}`}>
       <div className="flex items-center gap-3">
-        <Checkbox checked={tarefa.feita} onCheckedChange={onToggle} />
+        {tarefa.feita ? (
+          <button onClick={onToggle} title="Concluída — clique para reabrir" className="shrink-0">
+            <CheckCircle2 className="w-5 h-5 text-success fill-success/20" />
+          </button>
+        ) : (
+          <Checkbox checked={tarefa.feita} onCheckedChange={onToggle} />
+        )}
         <button
           className="flex-1 min-w-0 flex items-center gap-1.5 text-left"
           onClick={onToggleExpandida}
@@ -228,7 +234,7 @@ function TarefaRow({
           ) : (
             <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
           )}
-          <span className={`truncate ${tarefa.feita ? "line-through text-muted-foreground" : ""}`}>
+          <span className={`truncate ${tarefa.feita ? "line-through text-success" : ""}`}>
             {tarefa.texto}
           </span>
           {etapaAtualIdx >= 0 && (
@@ -264,7 +270,17 @@ function TarefaRow({
             <div className="space-y-1">
               {tarefa.etapas.map((etapa, idx) => (
                 <div key={idx} className="flex items-center gap-2">
-                  <Checkbox checked={etapa.concluida} onCheckedChange={() => alternarConcluidaEtapa(idx)} />
+                  {etapa.concluida ? (
+                    <button
+                      onClick={() => alternarConcluidaEtapa(idx)}
+                      title="Concluída — clique para reabrir"
+                      className="shrink-0"
+                    >
+                      <CheckCircle2 className="w-4 h-4 text-success fill-success/20" />
+                    </button>
+                  ) : (
+                    <Checkbox checked={etapa.concluida} onCheckedChange={() => alternarConcluidaEtapa(idx)} />
+                  )}
                   <button
                     className="shrink-0"
                     title={etapa.atual ? "Etapa atual" : "Marcar como etapa atual"}
@@ -275,7 +291,7 @@ function TarefaRow({
                     />
                   </button>
                   <span
-                    className={`flex-1 text-sm ${etapa.concluida ? "line-through text-muted-foreground" : ""} ${
+                    className={`flex-1 text-sm ${etapa.concluida ? "line-through text-success" : ""} ${
                       etapa.atual ? "underline decoration-gold decoration-2 underline-offset-2" : ""
                     }`}
                   >

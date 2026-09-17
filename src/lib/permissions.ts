@@ -26,6 +26,7 @@ export type MuralAccess = {
   nome: string;
   ativo: boolean;
   admin: boolean;
+  somPreferido: "sino" | "sirene" | "bipe";
   loading: boolean;
 };
 
@@ -38,7 +39,7 @@ export function useMyAccess(): MuralAccess {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("mural_usuarios")
-        .select("nome, ativo, admin")
+        .select("nome, ativo, admin, som_preferido")
         .eq("id", userId as string)
         .maybeSingle();
       if (error) throw error;
@@ -46,11 +47,14 @@ export function useMyAccess(): MuralAccess {
     },
   });
 
+  const somPreferido = q.data?.som_preferido;
+
   return {
     userId: userId ?? null,
     nome: q.data?.nome ?? "",
     ativo: q.data?.ativo ?? false,
     admin: q.data?.admin ?? false,
+    somPreferido: somPreferido === "sirene" || somPreferido === "bipe" ? somPreferido : "sino",
     loading: sessionLoading || (!!userId && q.isLoading),
   };
 }

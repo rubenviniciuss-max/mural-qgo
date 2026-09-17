@@ -20,13 +20,14 @@ self.addEventListener("push", (event) => {
     body: data.body || "Novo aviso no mural",
     icon: "/icon-192.png",
     badge: "/favicon.png",
-    // Padrão de vibração tipo "alarme" (curto-curto-longo) — só o Android
-    // obedece isso; o iOS ignora tanto vibração quanto qualquer som
+    // Padrão de vibração — muda conforme o som escolhido nas Configurações
+    // (sino/sirene/bipe), mandado pelo servidor em data.vibrate. Só o
+    // Android obedece isso; o iOS ignora tanto vibração quanto qualquer som
     // personalizado em notificação push (limitação do próprio sistema, não
     // dá pra contornar via código: nenhum navegador deixa a página escolher
     // o arquivo de som tocado quando o app está fechado, só o som padrão do
     // aparelho).
-    vibrate: [200, 100, 200, 100, 400],
+    vibrate: Array.isArray(data.vibrate) && data.vibrate.length ? data.vibrate : [200, 100, 200, 100, 400],
     requireInteraction: true,
     data: { url: data.url || "/app" },
   };

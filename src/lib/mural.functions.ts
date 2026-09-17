@@ -37,6 +37,20 @@ export const notifyNewAviso = createServerFn({ method: "POST" })
       const { data: subs, error } = await subsQuery;
       if (error) throw error;
 
+      // Padrão de vibração por som escolhido (só o Android obedece isso com
+      // o app fechado — o iPhone ignora vibração de notificação push. O som
+      // em si nunca pode ser trocado nessa hora, em nenhuma plataforma).
+      const VIBRA_POR_SOM: Record<string, number[]> = {
+        sino: [150, 80, 150],
+        sirene: [100, 60, 100, 60, 100, 60, 100, 60, 300],
+        bipe: [120],
+      };
+      const idsUnicos = Array.from(new Set((subs ?? []).map((s) => s.user_id)));
+      const { data: usuarios } = idsUnicos.length
+        ? await supabaseAdmin.from("mural_usuarios").select("id, som_preferido").in("id", idsUnicos)
+        : { data: [] as { id: string; som_preferido: string }[] };
+      const somPorUsuario = new Map((usuarios ?? []).map((u) => [u.id, u.som_preferido]));
+
       let sent = 0;
       let failed = 0;
       const preview = data.texto.length > 120 ? `${data.texto.slice(0, 117)}...` : data.texto;
@@ -44,9 +58,15 @@ export const notifyNewAviso = createServerFn({ method: "POST" })
       await Promise.all(
         (subs ?? []).map(async (sub) => {
           try {
+            const som = somPorUsuario.get(sub.user_id) ?? "sino";
             const result = await sendWebPush(
               { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
-              { title: `Novo aviso de ${data.autorNome}`, body: preview, url: "/app" },
+              {
+                title: `Novo aviso de ${data.autorNome}`,
+                body: preview,
+                url: "/app",
+                vibrate: VIBRA_POR_SOM[som] ?? VIBRA_POR_SOM.sino,
+              },
               { publicKey: VAPID_PUBLIC_KEY, privateKey: VAPID_PRIVATE_KEY, subject: VAPID_SUBJECT },
             );
             if (result.expired) {

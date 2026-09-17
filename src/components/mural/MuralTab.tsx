@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { notifyNewAviso } from "@/lib/mural.functions";
 import { playNotificationPing } from "@/lib/sound";
+import { corDoUsuario } from "@/lib/colors";
 import type { MuralAccess } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -59,6 +60,10 @@ function initials(nome: string) {
   if (!parts.length) return "?";
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function primeiroNome(nome: string) {
+  return nome.trim().split(/\s+/)[0] || nome;
 }
 
 export function MuralTab({ access }: { access: MuralAccess }) {
@@ -406,12 +411,19 @@ export function MuralTab({ access }: { access: MuralAccess }) {
           return (
             <div key={aviso.id} className={`panel p-4 ${aviso.fixado ? "border-gold" : ""}`}>
               <div className="flex items-start gap-3">
-                <Avatar>
-                  <AvatarFallback className="text-gold font-semibold">{initials(aviso.autor_nome)}</AvatarFallback>
+                <Avatar style={{ boxShadow: `0 0 0 2px ${corDoUsuario(aviso.autor_id)}` }}>
+                  <AvatarFallback
+                    className="font-semibold"
+                    style={{ color: corDoUsuario(aviso.autor_id) }}
+                  >
+                    {initials(aviso.autor_nome)}
+                  </AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold">{aviso.autor_nome}</span>
+                    <span className="font-bold" style={{ color: corDoUsuario(aviso.autor_id) }}>
+                      {aviso.autor_nome}
+                    </span>
                     {aviso.fixado && (
                       <Badge variant="outline" className="text-gold border-gold gap-1">
                         <Pin className="w-3 h-3" /> Fixado
@@ -427,27 +439,30 @@ export function MuralTab({ access }: { access: MuralAccess }) {
                       {aviso.editado_em ? " · editado" : ""}
                     </span>
                   </div>
-                  <p className="mt-1 whitespace-pre-wrap break-words">{aviso.texto}</p>
+                  <p className="mt-1 whitespace-pre-wrap break-words text-[13px] text-foreground/80 font-normal">
+                    {aviso.texto}
+                  </p>
 
                   {souAutor && (
                     <div className="mt-2 flex items-center gap-2 flex-wrap">
                       <span className="text-xs text-muted-foreground">
                         {alvos.filter((id) => lidos.has(id)).length}/{alvos.length} leram
                       </span>
-                      <div className="flex -space-x-1">
+                      <div className="flex flex-wrap gap-1">
                         {alvos.map((id) => {
                           const leu = lidos.has(id);
+                          const nome = nomePorId.get(id) ?? "...";
                           return (
                             <span
                               key={id}
-                              title={`${nomePorId.get(id) ?? "..."} ${leu ? "· leu" : "· ainda não leu"}`}
-                              className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] border ${
+                              title={`${nome} ${leu ? "· leu" : "· ainda não leu"}`}
+                              className={`px-1.5 py-0.5 rounded-full text-[10px] border ${
                                 leu
-                                  ? "bg-gold/25 border-gold text-gold"
-                                  : "bg-muted border-border text-muted-foreground opacity-50"
+                                  ? "bg-gold/15 border-gold text-gold"
+                                  : "bg-muted border-border text-muted-foreground opacity-60"
                               }`}
                             >
-                              {initials(nomePorId.get(id) ?? "?")}
+                              {primeiroNome(nome)}
                             </span>
                           );
                         })}
@@ -467,11 +482,15 @@ export function MuralTab({ access }: { access: MuralAccess }) {
                     <div className="mt-2 pl-3 border-l border-border space-y-2">
                       {comentarios.map((c) => (
                         <div key={c.id} className="text-sm">
-                          <span className="font-medium">{c.autor_nome}</span>{" "}
+                          <span className="font-bold" style={{ color: corDoUsuario(c.autor_id) }}>
+                            {c.autor_nome}
+                          </span>{" "}
                           <span className="text-xs text-muted-foreground">
                             {formatDistanceToNow(new Date(c.criado_em), { addSuffix: true, locale: ptBR })}
                           </span>
-                          <p className="whitespace-pre-wrap break-words">{c.texto}</p>
+                          <p className="whitespace-pre-wrap break-words text-[13px] text-foreground/80 font-normal">
+                            {c.texto}
+                          </p>
                         </div>
                       ))}
                       <div className="flex gap-2">

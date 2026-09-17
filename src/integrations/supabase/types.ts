@@ -9,6 +9,7 @@ export type Database = {
           nome: string;
           ativo: boolean;
           admin: boolean;
+          som_preferido: string;
           criado_em: string;
         };
         Insert: {
@@ -16,6 +17,7 @@ export type Database = {
           nome: string;
           ativo?: boolean;
           admin?: boolean;
+          som_preferido?: string;
           criado_em?: string;
         };
         Update: {
@@ -23,6 +25,7 @@ export type Database = {
           nome?: string;
           ativo?: boolean;
           admin?: boolean;
+          som_preferido?: string;
           criado_em?: string;
         };
         Relationships: [];

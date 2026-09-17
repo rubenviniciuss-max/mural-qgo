@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { LogOut, BellRing, Loader2 } from "lucide-react";
+import { LogOut, BellRing, Loader2, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MuralTab } from "@/components/mural/MuralTab";
 import { TarefasTab } from "@/components/mural/TarefasTab";
+import { ConfiguracoesTab } from "@/components/mural/ConfiguracoesTab";
 import { AdminUsuariosDialog } from "@/components/mural/AdminUsuariosDialog";
 
 export const Route = createFileRoute("/_authenticated/app")({
@@ -103,12 +104,18 @@ function AppPage() {
           <TabsList>
             <TabsTrigger value="mural">Mural</TabsTrigger>
             <TabsTrigger value="tarefas">Minhas Tarefas</TabsTrigger>
+            <TabsTrigger value="config">
+              <Settings2 className="w-3.5 h-3.5" /> Configurações
+            </TabsTrigger>
           </TabsList>
           <TabsContent value="mural">
             <MuralTab access={access} />
           </TabsContent>
           <TabsContent value="tarefas">
             {access.userId && <TarefasTab userId={access.userId} />}
+          </TabsContent>
+          <TabsContent value="config">
+            <ConfiguracoesTab access={access} />
           </TabsContent>
         </Tabs>
       </main>
