@@ -24,11 +24,32 @@ function AppPage() {
   const [pushBannerVisible, setPushBannerVisible] = useState(false);
   const [enabling, setEnabling] = useState(false);
 
+  // Antes, isso só mostrava o banner quando a permissão nunca tinha sido
+  // pedida ("default"). Só que a inscrição de push pode morrer sozinha —
+  // cache do navegador limpo, celular trocado, PWA reinstalada — mesmo com
+  // a permissão continuando "concedida". Nesse caso a pessoa parava de
+  // receber notificação e não tinha nenhum aviso disso (nada reaparecia pra
+  // ela reativar). Agora, se a permissão já foi concedida antes mas não há
+  // inscrição ativa, a gente tenta reativar sozinho, sem pedir nada — e só
+  // mostra o banner (pedindo clique) se realmente precisar de permissão.
   useEffect(() => {
-    if (!pushSupported()) return;
-    if (currentPermission() !== "default") return;
-    hasActivePushSubscription().then((has) => setPushBannerVisible(!has));
-  }, []);
+    if (!pushSupported() || !access.userId) return;
+    const permissao = currentPermission();
+    if (permissao === "denied") return;
+
+    hasActivePushSubscription().then(async (has) => {
+      if (has) {
+        setPushBannerVisible(false);
+        return;
+      }
+      if (permissao === "granted") {
+        const result = await enablePush(access.userId as string);
+        setPushBannerVisible(!result.ok);
+        return;
+      }
+      setPushBannerVisible(true);
+    });
+  }, [access.userId]);
 
   async function ativarNotificacoes() {
     if (!access.userId) return;

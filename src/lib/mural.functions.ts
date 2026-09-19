@@ -1,6 +1,83 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
+// Padrão de vibração por som escolhido (só o Android obedece isso com o app
+// fechado — o iPhone ignora vibração de notificação push. O som em si nunca
+// pode ser trocado nessa hora, em nenhuma plataforma).
+const VIBRA_POR_SOM: Record<string, number[]> = {
+  sino: [150, 80, 150],
+  sirene: [100, 60, 100, 60, 100, 60, 100, 60, 300],
+  bipe: [120],
+};
+
+// ---------------------------------------------------------------
+// Helper compartilhado: manda push pra uma lista de user_ids (busca as
+// inscrições e o som preferido de cada um, envia em paralelo, e já limpa
+// inscrições expiradas). Usado tanto por aviso novo quanto por comentário
+// novo — antes só existia pra aviso, e por isso comentário nunca notificava
+// ninguém.
+// ---------------------------------------------------------------
+type SupabaseAdminClient = (typeof import("@/integrations/supabase/client.server"))["supabaseAdmin"];
+
+async function dispararPushParaUsuarios(
+  supabaseAdmin: SupabaseAdminClient,
+  userIds: string[],
+  payload: { title: string; body: string; url: string },
+): Promise<{ sent: number; failed: number }> {
+  if (userIds.length === 0) return { sent: 0, failed: 0 };
+
+  const VAPID_PUBLIC_KEY = process.env["VAPID_PUBLIC_KEY"];
+  const VAPID_PRIVATE_KEY = process.env["VAPID_PRIVATE_KEY"];
+  const VAPID_SUBJECT = process.env["VAPID_SUBJECT"];
+  if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY || !VAPID_SUBJECT) {
+    console.error("[mural] VAPID não configurado — pulando push.");
+    return { sent: 0, failed: 0 };
+  }
+
+  const { sendWebPush } = await import("@/lib/webpush.server");
+
+  const { data: subs, error } = await supabaseAdmin
+    .from("mural_push_subscriptions")
+    .select("id, endpoint, p256dh, auth, user_id")
+    .in("user_id", userIds);
+  if (error) throw error;
+
+  const idsUnicos = Array.from(new Set((subs ?? []).map((s) => s.user_id)));
+  const { data: usuarios } = idsUnicos.length
+    ? await supabaseAdmin.from("mural_usuarios").select("id, som_preferido").in("id", idsUnicos)
+    : { data: [] as { id: string; som_preferido: string }[] };
+  const somPorUsuario = new Map((usuarios ?? []).map((u) => [u.id, u.som_preferido]));
+
+  let sent = 0;
+  let failed = 0;
+
+  await Promise.all(
+    (subs ?? []).map(async (sub) => {
+      try {
+        const som = somPorUsuario.get(sub.user_id) ?? "sino";
+        const result = await sendWebPush(
+          { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
+          { ...payload, vibrate: VIBRA_POR_SOM[som] ?? VIBRA_POR_SOM.sino },
+          { publicKey: VAPID_PUBLIC_KEY, privateKey: VAPID_PRIVATE_KEY, subject: VAPID_SUBJECT },
+        );
+        if (result.expired) {
+          // Inscrição morta (navegador desinstalado, permissão revogada faz
+          // tempo etc.) — limpa aqui pra não ficar tentando de novo pra
+          // sempre, mesmo que a pessoa nunca mais abra o Mural.
+          await supabaseAdmin.from("mural_push_subscriptions").delete().eq("id", sub.id);
+        }
+        if (result.ok) sent++;
+        else failed++;
+      } catch (e) {
+        console.error("[mural] falha ao enviar push", e);
+        failed++;
+      }
+    }),
+  );
+
+  return { sent, failed };
+}
+
 // ---------------------------------------------------------------
 // Disparar push notification para todo mundo (menos quem postou) quando
 // um novo aviso é criado no Mural. Chamado pelo cliente logo depois de
@@ -13,78 +90,80 @@ export const notifyNewAviso = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     try {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      const { sendWebPush } = await import("@/lib/webpush.server");
-
-      const VAPID_PUBLIC_KEY = process.env["VAPID_PUBLIC_KEY"];
-      const VAPID_PRIVATE_KEY = process.env["VAPID_PRIVATE_KEY"];
-      const VAPID_SUBJECT = process.env["VAPID_SUBJECT"];
-      if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY || !VAPID_SUBJECT) {
-        console.error("[mural] VAPID não configurado — pulando push.");
-        return { sent: 0, failed: 0 };
-      }
 
       // destinatarios == null/undefined -> aviso "para todos" (empurra pra
-      // todo mundo, menos quem postou). destinatarios == [] com valores ->
-      // empurra só pra essas pessoas (ainda excluindo quem postou, por
-      // garantia, mesmo que a lista já não devesse incluí-lo).
-      let subsQuery = supabaseAdmin
-        .from("mural_push_subscriptions")
-        .select("id, endpoint, p256dh, auth, user_id")
-        .neq("user_id", context.userId);
+      // todo mundo ativo, menos quem postou). destinatarios == [] com
+      // valores -> empurra só pra essas pessoas.
+      let publico: string[];
       if (Array.isArray(data.destinatarios)) {
-        subsQuery = subsQuery.in("user_id", data.destinatarios);
+        publico = data.destinatarios.filter((id) => id !== context.userId);
+      } else {
+        const { data: ativos, error } = await supabaseAdmin.from("mural_usuarios").select("id").eq("ativo", true);
+        if (error) throw error;
+        publico = (ativos ?? []).map((u) => u.id).filter((id) => id !== context.userId);
       }
-      const { data: subs, error } = await subsQuery;
-      if (error) throw error;
 
-      // Padrão de vibração por som escolhido (só o Android obedece isso com
-      // o app fechado — o iPhone ignora vibração de notificação push. O som
-      // em si nunca pode ser trocado nessa hora, em nenhuma plataforma).
-      const VIBRA_POR_SOM: Record<string, number[]> = {
-        sino: [150, 80, 150],
-        sirene: [100, 60, 100, 60, 100, 60, 100, 60, 300],
-        bipe: [120],
-      };
-      const idsUnicos = Array.from(new Set((subs ?? []).map((s) => s.user_id)));
-      const { data: usuarios } = idsUnicos.length
-        ? await supabaseAdmin.from("mural_usuarios").select("id, som_preferido").in("id", idsUnicos)
-        : { data: [] as { id: string; som_preferido: string }[] };
-      const somPorUsuario = new Map((usuarios ?? []).map((u) => [u.id, u.som_preferido]));
-
-      let sent = 0;
-      let failed = 0;
       const preview = data.texto.length > 120 ? `${data.texto.slice(0, 117)}...` : data.texto;
-
-      await Promise.all(
-        (subs ?? []).map(async (sub) => {
-          try {
-            const som = somPorUsuario.get(sub.user_id) ?? "sino";
-            const result = await sendWebPush(
-              { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
-              {
-                title: `Novo aviso de ${data.autorNome}`,
-                body: preview,
-                url: "/app",
-                vibrate: VIBRA_POR_SOM[som] ?? VIBRA_POR_SOM.sino,
-              },
-              { publicKey: VAPID_PUBLIC_KEY, privateKey: VAPID_PRIVATE_KEY, subject: VAPID_SUBJECT },
-            );
-            if (result.expired) {
-              await supabaseAdmin.from("mural_push_subscriptions").delete().eq("id", sub.id);
-            }
-            if (result.ok) sent++;
-            else failed++;
-          } catch (e) {
-            console.error("[mural] falha ao enviar push", e);
-            failed++;
-          }
-        }),
-      );
-
-      return { sent, failed };
+      return await dispararPushParaUsuarios(supabaseAdmin, publico, {
+        title: `Novo aviso de ${data.autorNome}`,
+        body: preview,
+        url: "/app",
+      });
     } catch (e) {
       // Nunca deixa o erro subir e travar a UI de quem postou o aviso.
       console.error("[mural] notifyNewAviso falhou por completo", e);
+      return { sent: 0, failed: 0 };
+    }
+  });
+
+// ---------------------------------------------------------------
+// Disparar push notification quando alguém COMENTA num aviso — antes só
+// existia para aviso novo, então comentário nunca chegava a notificar
+// ninguém que não estivesse com o Mural aberto na hora. O público é quem já
+// podia ver o aviso (destinatários dele, ou todo mundo ativo se for "para
+// todos") mais o autor original do aviso (que precisa saber que comentaram
+// no que ele postou, mesmo não estando nos "destinatários" do próprio
+// aviso) — menos quem comentou agora.
+// ---------------------------------------------------------------
+export const notifyNewComentario = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: { avisoId: string; autorNome: string; texto: string }) => d)
+  .handler(async ({ data, context }) => {
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+      const { data: aviso, error: avisoError } = await supabaseAdmin
+        .from("mural_avisos")
+        .select("autor_id, todos")
+        .eq("id", data.avisoId)
+        .maybeSingle();
+      if (avisoError) throw avisoError;
+      if (!aviso) return { sent: 0, failed: 0 };
+
+      const publicoSet = new Set<string>();
+      if (aviso.todos) {
+        const { data: ativos, error } = await supabaseAdmin.from("mural_usuarios").select("id").eq("ativo", true);
+        if (error) throw error;
+        (ativos ?? []).forEach((u) => publicoSet.add(u.id));
+      } else {
+        const { data: dests, error } = await supabaseAdmin
+          .from("mural_aviso_destinatarios")
+          .select("user_id")
+          .eq("aviso_id", data.avisoId);
+        if (error) throw error;
+        (dests ?? []).forEach((d) => publicoSet.add(d.user_id));
+      }
+      publicoSet.add(aviso.autor_id);
+      publicoSet.delete(context.userId);
+
+      const preview = data.texto.length > 120 ? `${data.texto.slice(0, 117)}...` : data.texto;
+      return await dispararPushParaUsuarios(supabaseAdmin, Array.from(publicoSet), {
+        title: `${data.autorNome} comentou no mural`,
+        body: preview,
+        url: "/app",
+      });
+    } catch (e) {
+      console.error("[mural] notifyNewComentario falhou por completo", e);
       return { sent: 0, failed: 0 };
     }
   });

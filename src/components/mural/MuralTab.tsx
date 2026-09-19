@@ -7,7 +7,7 @@ import { Pin, PinOff, Pencil, Trash2, Send, Loader2, MessageCircle, Users, ListP
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
-import { notifyNewAviso } from "@/lib/mural.functions";
+import { notifyNewAviso, notifyNewComentario } from "@/lib/mural.functions";
 import { playNotificationPing } from "@/lib/sound";
 import { corDoUsuario } from "@/lib/colors";
 import type { MuralAccess } from "@/lib/permissions";
@@ -69,10 +69,12 @@ function primeiroNome(nome: string) {
 export function MuralTab({ access }: { access: MuralAccess }) {
   const qc = useQueryClient();
   const [texto, setTexto] = useState("");
-  // Fica marcado do jeito que a pessoa deixou da última vez que postou — não
-  // reseta depois de enviar, pra dar pra mandar outro aviso ou tarefa pra
-  // mesma pessoa sem precisar marcar de novo toda hora.
-  const [paraTodos, setParaTodos] = useState(true);
+  // Começa tudo desmarcado (evita mandar "para todos" sem querer, e deixa a
+  // área de seleção de pessoas fechada — mais espaço pra ver os avisos).
+  // Mas depois de publicar, NÃO reseta a seleção — fica do jeito que a
+  // pessoa deixou, pra dar pra mandar outro aviso ou tarefa pra mesma
+  // pessoa sem precisar marcar de novo toda hora.
+  const [paraTodos, setParaTodos] = useState(false);
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<Aviso | null>(null);
   const [editTexto, setEditTexto] = useState("");
@@ -80,10 +82,19 @@ export function MuralTab({ access }: { access: MuralAccess }) {
   const [comentariosAbertos, setComentariosAbertos] = useState<Set<string>>(new Set());
   const [rascunhoComentario, setRascunhoComentario] = useState<Record<string, string>>({});
   const notifyFn = useServerFn(notifyNewAviso);
+  const notifyComentarioFn = useServerFn(notifyNewComentario);
   const lastSeenId = useRef<string | null>(null);
+  const lastSeenComentarioId = useRef<string | null>(null);
 
+  // refetchInterval é uma rede de segurança: o Realtime (abaixo) já atualiza
+  // ao vivo na maioria das vezes, mas um websocket pode cair sem avisar (rede
+  // instável, notebook que dormiu, aba em segundo plano) — sem isso, quem
+  // ficasse com o Mural aberto nessa hora só veria os avisos novos ao
+  // recarregar a página manualmente. Com isso, no pior caso, o atraso é de
+  // até 20s em vez de "nunca até recarregar".
   const avisosQuery = useQuery({
     queryKey: ["mural-avisos"],
+    refetchInterval: 20_000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("mural_avisos")
@@ -110,6 +121,7 @@ export function MuralTab({ access }: { access: MuralAccess }) {
   const leiturasQuery = useQuery({
     queryKey: ["mural-leituras", avisoIdsKey],
     enabled: avisos.length > 0,
+    refetchInterval: 20_000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("mural_aviso_leituras")
@@ -144,6 +156,7 @@ export function MuralTab({ access }: { access: MuralAccess }) {
   const comentariosQuery = useQuery({
     queryKey: ["mural-comentarios", avisoIdsKey],
     enabled: avisos.length > 0,
+    refetchInterval: 20_000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("mural_aviso_comentarios")
@@ -178,40 +191,94 @@ export function MuralTab({ access }: { access: MuralAccess }) {
   }, [avisoIdsKey, access.userId]);
 
   // Realtime: aviso novo, comentário novo e leitura nova atualizam a tela
-  // ao vivo (inclusive "quem já leu" pra quem enviou o aviso).
+  // ao vivo (inclusive "quem já leu" pra quem enviou o aviso). Antes, um
+  // comentário novo só atualizava a lista em silêncio (sem som/toast) — por
+  // isso parecia que "às vezes não notificava": aviso avisava, comentário
+  // nunca avisava. Agora os dois tocam som e mostram toast.
+  //
+  // Reconexão: o canal do Supabase Realtime pode cair sem aviso (rede
+  // instável, notebook que dormiu) e ficar preso num estado de erro —
+  // "às vezes chega na hora, às vezes não" também vinha disso. Se o status
+  // vier como erro/timeout/fechado, recria o canal do zero depois de um
+  // instante em vez de ficar quieto esperando (o refetchInterval acima
+  // cobre o intervalo até a reconexão).
   useEffect(() => {
-    const channel = supabase
-      .channel("mural-avisos-realtime")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "mural_avisos" },
-        (payload) => {
-          const novo = payload.new as Aviso;
-          qc.invalidateQueries({ queryKey: ["mural-avisos"] });
-          if (novo.id !== lastSeenId.current && novo.autor_id !== access.userId) {
-            playNotificationPing();
-            toast(`Novo aviso de ${novo.autor_nome}`, { description: novo.texto.slice(0, 120) });
+    let ativo = true;
+    let canal: ReturnType<typeof supabase.channel> | null = null;
+    let timerReconexao: ReturnType<typeof setTimeout> | null = null;
+
+    function conectar() {
+      canal = supabase
+        .channel(`mural-avisos-realtime-${access.userId ?? "anon"}`)
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "mural_avisos" },
+          (payload) => {
+            const novo = payload.new as Aviso;
+            qc.invalidateQueries({ queryKey: ["mural-avisos"] });
+            if (novo.id !== lastSeenId.current && novo.autor_id !== access.userId) {
+              playNotificationPing();
+              toast(`Novo aviso de ${novo.autor_nome}`, { description: novo.texto.slice(0, 120) });
+            }
+          },
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "mural_avisos" },
+          () => qc.invalidateQueries({ queryKey: ["mural-avisos"] }),
+        )
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "mural_aviso_leituras" },
+          () => qc.invalidateQueries({ queryKey: ["mural-leituras"] }),
+        )
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "mural_aviso_comentarios" },
+          (payload) => {
+            const novo = payload.new as Comentario;
+            qc.invalidateQueries({ queryKey: ["mural-comentarios"] });
+            if (novo.id !== lastSeenComentarioId.current && novo.autor_id !== access.userId) {
+              playNotificationPing();
+              toast(`${novo.autor_nome} comentou no mural`, { description: novo.texto.slice(0, 120) });
+            }
+          },
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "mural_aviso_comentarios" },
+          () => qc.invalidateQueries({ queryKey: ["mural-comentarios"] }),
+        )
+        .subscribe((status) => {
+          if (!ativo) return;
+          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+            if (timerReconexao) clearTimeout(timerReconexao);
+            timerReconexao = setTimeout(() => {
+              if (!ativo) return;
+              if (canal) supabase.removeChannel(canal);
+              conectar();
+            }, 3000);
           }
-        },
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "mural_avisos" },
-        () => qc.invalidateQueries({ queryKey: ["mural-avisos"] }),
-      )
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "mural_aviso_leituras" },
-        () => qc.invalidateQueries({ queryKey: ["mural-leituras"] }),
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "mural_aviso_comentarios" },
-        () => qc.invalidateQueries({ queryKey: ["mural-comentarios"] }),
-      )
-      .subscribe();
+        });
+    }
+    conectar();
+
+    // Quando a aba volta a ficar visível (usuário trocou de app/aba, ou o
+    // computador acordou do sleep), busca tudo de novo na hora — não espera
+    // o refetchInterval, que pode levar até 20s.
+    function aoFicarVisivel() {
+      if (document.visibilityState !== "visible") return;
+      qc.invalidateQueries({ queryKey: ["mural-avisos"] });
+      qc.invalidateQueries({ queryKey: ["mural-comentarios"] });
+      qc.invalidateQueries({ queryKey: ["mural-leituras"] });
+    }
+    document.addEventListener("visibilitychange", aoFicarVisivel);
+
     return () => {
-      supabase.removeChannel(channel);
+      ativo = false;
+      document.removeEventListener("visibilitychange", aoFicarVisivel);
+      if (timerReconexao) clearTimeout(timerReconexao);
+      if (canal) supabase.removeChannel(canal);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [access.userId]);
@@ -327,13 +394,23 @@ export function MuralTab({ access }: { access: MuralAccess }) {
     mutationFn: async ({ avisoId, texto: conteudo }: { avisoId: string; texto: string }) => {
       const limpo = conteudo.trim();
       if (!limpo) return;
-      const { error } = await supabase.from("mural_aviso_comentarios").insert({
-        aviso_id: avisoId,
-        autor_id: access.userId as string,
-        autor_nome: access.nome,
-        texto: limpo,
-      });
+      const { data, error } = await supabase
+        .from("mural_aviso_comentarios")
+        .insert({
+          aviso_id: avisoId,
+          autor_id: access.userId as string,
+          autor_nome: access.nome,
+          texto: limpo,
+        })
+        .select()
+        .single();
       if (error) throw error;
+
+      lastSeenComentarioId.current = data.id;
+      // Antes só aviso novo disparava push — comentário nunca chegava a
+      // notificar quem não estivesse com o Mural aberto. Falha aqui não
+      // deve travar o envio do comentário.
+      notifyComentarioFn({ data: { avisoId, autorNome: access.nome, texto: limpo } }).catch(() => undefined);
     },
     onSuccess: (_d, vars) => {
       setRascunhoComentario((s) => ({ ...s, [vars.avisoId]: "" }));
@@ -381,32 +458,42 @@ export function MuralTab({ access }: { access: MuralAccess }) {
             Enviar para todos
           </label>
 
-          <div className={`pl-1 space-y-1 ${paraTodos ? "opacity-50" : ""}`}>
-            <p className="text-xs text-muted-foreground">
-              {paraTodos ? "Ou, se desmarcar \"todos\", escolha quem recebe:" : "Escolha quem recebe:"}
-            </p>
-            <div className="space-y-1">
-              {(usuariosQuery.data ?? [])
-                .filter((u) => u.id !== access.userId)
-                .map((u) => (
-                  <label
-                    key={u.id}
-                    className="flex items-center gap-2 text-sm py-1 px-1.5 rounded hover:bg-muted/50 cursor-pointer"
-                  >
-                    <Checkbox
-                      checked={selecionados.has(u.id)}
-                      onCheckedChange={(v) => toggleSelecionado(u.id, !!v)}
-                    />
-                    <span className="font-medium" style={{ color: corDoUsuario(u.id) }}>
-                      {u.nome}
-                    </span>
-                  </label>
-                ))}
-              {(usuariosQuery.data ?? []).filter((u) => u.id !== access.userId).length === 0 && (
-                <span className="text-xs text-muted-foreground">Ninguém mais ativo no Mural ainda.</span>
-              )}
+          {/* Só aparece quando "todos" está desmarcado — em vez de ficar
+              esmaecida ocupando espaço, some de vez, deixando mais altura
+              visível pra lista de avisos abaixo. Os nomes ficam lado a lado
+              (em vez de um por linha) pelo mesmo motivo. */}
+          {!paraTodos && (
+            <div className="pl-1 space-y-1">
+              <p className="text-xs text-muted-foreground">Escolha quem recebe:</p>
+              <div className="flex flex-wrap gap-1.5">
+                {(usuariosQuery.data ?? [])
+                  .filter((u) => u.id !== access.userId)
+                  .map((u) => {
+                    const marcado = selecionados.has(u.id);
+                    return (
+                      <label
+                        key={u.id}
+                        className={`flex items-center gap-1.5 text-sm py-1 px-2 rounded-full border cursor-pointer transition-colors ${
+                          marcado ? "border-gold bg-gold/10" : "border-border hover:bg-muted/50"
+                        }`}
+                      >
+                        <Checkbox
+                          className="w-3.5 h-3.5"
+                          checked={marcado}
+                          onCheckedChange={(v) => toggleSelecionado(u.id, !!v)}
+                        />
+                        <span className="font-medium" style={{ color: corDoUsuario(u.id) }}>
+                          {u.nome}
+                        </span>
+                      </label>
+                    );
+                  })}
+                {(usuariosQuery.data ?? []).filter((u) => u.id !== access.userId).length === 0 && (
+                  <span className="text-xs text-muted-foreground">Ninguém mais ativo no Mural ainda.</span>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         <div className="flex justify-end mt-3">
