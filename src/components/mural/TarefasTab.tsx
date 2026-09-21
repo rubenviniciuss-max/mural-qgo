@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, Loader2, ChevronDown, ChevronRight, X, CheckCircle2, Pencil } from "lucide-react";
+import { Plus, Trash2, Loader2, ChevronDown, ChevronRight, X, CheckCircle2, Pencil, Building2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
@@ -20,6 +20,12 @@ type Tarefa = {
   etapas: Etapa[];
 };
 
+// As 4 etapas padrão de toda abertura de empresa — antes a pessoa tinha que
+// digitar e adicionar uma por uma toda vez que abria uma empresa nova. Agora
+// o botão "Nova abertura de empresa" já cria a tarefa com essas 4 etapas
+// prontas, na ordem certa.
+const ETAPAS_ABERTURA = ["FAZER VIABILIDADE", "ASSINATURA", "INSCRIÇÃO MUNICIPAL", "PROCURAÇÃO"];
+
 function etapasSeguras(valor: unknown): Etapa[] {
   if (!Array.isArray(valor)) return [];
   return valor
@@ -34,6 +40,8 @@ export function TarefasTab({ userId }: { userId: string }) {
   const qc = useQueryClient();
   const [novaTarefa, setNovaTarefa] = useState("");
   const [expandidas, setExpandidas] = useState<Set<string>>(new Set());
+  const [mostrarAbertura, setMostrarAbertura] = useState(false);
+  const [nomeAbertura, setNomeAbertura] = useState("");
 
   const tarefasQuery = useQuery({
     queryKey: ["mural-minhas-tarefas", userId],
@@ -57,6 +65,26 @@ export function TarefasTab({ userId }: { userId: string }) {
     },
     onSuccess: () => {
       setNovaTarefa("");
+      qc.invalidateQueries({ queryKey: ["mural-minhas-tarefas", userId] });
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  // Cria a tarefa de "abertura de empresa" já com as 4 etapas padrão
+  // preenchidas, em vez de a pessoa ter que adicionar cada etapa na mão
+  // toda vez que abre uma empresa nova.
+  const adicionarAbertura = useMutation({
+    mutationFn: async () => {
+      const nome = nomeAbertura.trim();
+      if (!nome) return;
+      const texto = `ABERTURA ${nome.toUpperCase()}`;
+      const etapas: Etapa[] = ETAPAS_ABERTURA.map((etapaTexto) => ({ texto: etapaTexto, concluida: false }));
+      const { error } = await supabase.from("mural_tarefas").insert({ user_id: userId, texto, etapas: etapas as any });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setNomeAbertura("");
+      setMostrarAbertura(false);
       qc.invalidateQueries({ queryKey: ["mural-minhas-tarefas", userId] });
     },
     onError: (e: any) => toast.error(e.message),
@@ -130,6 +158,40 @@ export function TarefasTab({ userId }: { userId: string }) {
           {adicionar.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
         </Button>
       </div>
+
+      {mostrarAbertura ? (
+        <div className="panel p-3 space-y-2">
+          <p className="text-xs text-muted-foreground">
+            Cria a tarefa já com as 4 etapas de sempre: Fazer viabilidade, Assinatura, Inscrição municipal e
+            Procuração.
+          </p>
+          <div className="flex gap-2">
+            <Input
+              autoFocus
+              placeholder="Nome da empresa..."
+              value={nomeAbertura}
+              onChange={(e) => setNomeAbertura(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") adicionarAbertura.mutate();
+                if (e.key === "Escape") setMostrarAbertura(false);
+              }}
+            />
+            <Button
+              onClick={() => adicionarAbertura.mutate()}
+              disabled={adicionarAbertura.isPending || !nomeAbertura.trim()}
+            >
+              {adicionarAbertura.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Criar"}
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => setMostrarAbertura(false)}>
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button variant="outline" size="sm" onClick={() => setMostrarAbertura(true)} className="gap-1.5">
+          <Building2 className="w-4 h-4" /> Nova abertura de empresa
+        </Button>
+      )}
 
       {tarefasQuery.isLoading && <p className="text-sm text-muted-foreground text-center py-8">Carregando...</p>}
 
