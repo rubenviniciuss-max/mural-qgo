@@ -9,6 +9,7 @@ import { currentPermission, enablePush, hasActivePushSubscription, pushSupported
 import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { InicioTab } from "@/components/mural/InicioTab";
 import { MuralTab } from "@/components/mural/MuralTab";
 import { TarefasTab } from "@/components/mural/TarefasTab";
 import { ConfiguracoesTab } from "@/components/mural/ConfiguracoesTab";
@@ -23,6 +24,9 @@ function AppPage() {
   const access = useMyAccess();
   const [pushBannerVisible, setPushBannerVisible] = useState(false);
   const [enabling, setEnabling] = useState(false);
+  // Controlado (em vez de "defaultValue" solto) pra dar pra navegar pra uma
+  // aba a partir de um clique nos balões da tela de Início.
+  const [aba, setAba] = useState("inicio");
 
   // Antes, isso só mostrava o banner quando a permissão nunca tinha sido
   // pedida ("default"). Só que a inscrição de push pode morrer sozinha —
@@ -121,14 +125,18 @@ function AppPage() {
           </div>
         )}
 
-        <Tabs defaultValue="mural">
+        <Tabs value={aba} onValueChange={setAba}>
           <TabsList>
+            <TabsTrigger value="inicio">Início</TabsTrigger>
             <TabsTrigger value="mural">Mural</TabsTrigger>
             <TabsTrigger value="tarefas">Minhas Tarefas</TabsTrigger>
             <TabsTrigger value="config">
               <Settings2 className="w-3.5 h-3.5" /> Configurações
             </TabsTrigger>
           </TabsList>
+          <TabsContent value="inicio">
+            <InicioTab access={access} onNavigate={setAba} />
+          </TabsContent>
           <TabsContent value="mural">
             <MuralTab access={access} />
           </TabsContent>

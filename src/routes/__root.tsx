@@ -15,8 +15,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Mural QGO" },
-      { name: "description", content: "Mural de avisos e tarefas da equipe QGO Prime." },
+      { title: "Mural da Equipe" },
+      { name: "description", content: "Mural de avisos e tarefas da equipe." },
       { name: "theme-color", content: "#F5F5F5" },
       { name: "robots", content: "noindex, follow" },
       // Necessários pro iPhone tratar isso como "app instalado" ao adicionar
@@ -26,7 +26,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       // uma aba comum do Safari.
       { name: "apple-mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
-      { name: "apple-mobile-web-app-title", content: "Mural QGO" },
+      { name: "apple-mobile-web-app-title", content: "Mural da Equipe" },
       { name: "mobile-web-app-capable", content: "yes" },
     ],
     links: [

@@ -1,7 +1,7 @@
 {
-  "name": "Mural QGO",
-  "short_name": "Mural QGO",
-  "description": "Mural de avisos e tarefas da equipe QGO Prime.",
+  "name": "Mural da Equipe",
+  "short_name": "Mural",
+  "description": "Mural de avisos e tarefas da equipe.",
   "start_url": "/app",
   "scope": "/",
   "display": "standalone",

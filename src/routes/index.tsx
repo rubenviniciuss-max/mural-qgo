@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 export const Route = createFileRoute("/")({
   component: Redirecionando,
   head: () => ({
-    meta: [{ title: "Mural QGO" }],
+    meta: [{ title: "Mural da Equipe" }],
   }),
   // Sem tela de apresentação: quem abre a raiz do Mural vai direto pro app
   // (se já tiver sessão) ou pra tela de login.
@@ -31,7 +31,7 @@ function Redirecionando() {
   return (
     <div className="min-h-screen flex items-center justify-center gap-2 text-sm text-muted-foreground">
       <Loader2 className="w-4 h-4 animate-spin" />
-      Carregando o Mural QGO…
+      Carregando o Mural da Equipe…
     </div>
   );
 }

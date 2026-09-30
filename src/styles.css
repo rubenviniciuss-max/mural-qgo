@@ -261,3 +261,21 @@ html .text-muted-foreground { opacity: 0.85; }
   height: 1px;
   background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--gold) 55%, transparent), transparent);
 }
+
+/* Balão de "avisos não lidos" na tela de Início — pisca (contorno + sombra
+   dourada pulsando) enquanto houver aviso não lido, pra chamar atenção sem
+   precisar abrir o Mural pra descobrir. Some sozinho assim que zerar. */
+@utility blink-alert {
+  animation: blink-alert-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes blink-alert-pulse {
+  0%, 100% {
+    border-color: color-mix(in oklab, var(--gold) 55%, transparent);
+    box-shadow: var(--shadow-premium), 0 0 0 1px color-mix(in oklab, var(--gold) 35%, transparent);
+  }
+  50% {
+    border-color: var(--gold);
+    box-shadow: var(--shadow-premium), var(--glow-gold);
+  }
+}
