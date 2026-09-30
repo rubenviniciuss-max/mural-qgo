@@ -302,22 +302,27 @@ export function MuralTab({ access }: { access: MuralAccess }) {
         throw new Error('Selecione ao menos uma pessoa, ou marque "Enviar para todos".');
       }
 
-      const { data, error } = await supabase
-        .from("mural_avisos")
-        .insert({ autor_id: access.userId as string, autor_nome: access.nome, texto: conteudo, todos })
-        .select()
-        .single();
+      // Cria o aviso E os destinatários numa função só (RPC), dentro de uma
+      // única transação no banco — antes eram dois "insert" separados (um
+      // pro aviso, outro pros destinatários) e por causa disso um aviso "só
+      // para X pessoas" podia demorar a aparecer (ou nunca notificar em
+      // tempo real, só no refresh automático de 20s) pra esses destinatários:
+      // o Realtime dispara o evento assim que o aviso é criado, e naquele
+      // instante a linha de destinatário ainda não existia — então a
+      // verificação de permissão (RLS) dizia que a pessoa "não podia ver"
+      // aquele aviso ainda, e ela nunca recebia o evento em tempo real.
+      // Juntando os dois inserts na mesma transação, o Realtime só dispara
+      // depois que aviso E destinatários já existem os dois juntos.
+      const { data, error } = await supabase.rpc(
+        "mural_criar_aviso" as never,
+        {
+          p_texto: conteudo,
+          p_autor_nome: access.nome,
+          p_todos: todos,
+          p_destinatarios: todos ? null : destinatarios,
+        } as never,
+      );
       if (error) throw error;
-
-      if (!todos && destinatarios && destinatarios.length > 0) {
-        const { error: destError } = await supabase
-          .from("mural_aviso_destinatarios")
-          .insert(destinatarios.map((id) => ({ aviso_id: data.id, user_id: id })));
-        if (destError) {
-          await supabase.from("mural_avisos").delete().eq("id", data.id);
-          throw destError;
-        }
-      }
 
       lastSeenId.current = data.id;
       // Dispara o push só pra quem deve ver; se falhar, não atrapalha o post.
@@ -386,6 +391,7 @@ export function MuralTab({ access }: { access: MuralAccess }) {
     onSuccess: () => {
       toast.success("Adicionado às suas tarefas");
       qc.invalidateQueries({ queryKey: ["mural-minhas-tarefas", access.userId] });
+      qc.invalidateQueries({ queryKey: ["mural-tarefas-pendentes-count", access.userId] });
     },
     onError: (e: any) => toast.error(e.message || "Não foi possível adicionar à sua lista de tarefas"),
   });

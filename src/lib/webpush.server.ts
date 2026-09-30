@@ -143,6 +143,11 @@ export async function sendWebPush(
       "Content-Encoding": "aes128gcm",
       "Content-Type": "application/octet-stream",
       TTL: String(opts.ttl ?? 60 * 60 * 24),
+      // "high" pede pro serviço de push (FCM/Mozilla autopush/etc.) entregar
+      // com prioridade — sem isso, alguns serviços colocam a mensagem numa
+      // fila "normal" que pode demorar mais, especialmente com o celular em
+      // economia de bateria. Um aviso da empresa deve chegar rápido.
+      Urgency: "high",
       Authorization: `vapid t=${jwt}, k=${opts.publicKey}`,
     },
     body,

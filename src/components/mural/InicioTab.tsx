@@ -1,24 +1,12 @@
-import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { ClipboardList, BellRing, ChevronRight } from "lucide-react";
 
-import { supabase } from "@/integrations/supabase/client";
 import { corDoUsuario } from "@/lib/colors";
 import type { MuralAccess } from "@/lib/permissions";
+import { useResumoAvisos, useMarcarAvisoLido, useTarefasPendentesCount } from "@/lib/mural-contadores";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-
-type AvisoResumo = {
-  id: string;
-  autor_id: string;
-  autor_nome: string;
-  texto: string;
-  criado_em: string;
-};
-
-type TarefaResumo = { id: string; feita: boolean };
 
 function initials(nome: string) {
   const parts = nome.trim().split(/\s+/).filter(Boolean);
@@ -45,72 +33,22 @@ export function InicioTab({
   access: MuralAccess;
   onNavigate: (aba: "tarefas" | "mural") => void;
 }) {
-  // Consultas próprias desta tela (chaves e queries separadas das já usadas
-  // em Mural/Minhas Tarefas) — assim a tela de Início só LÊ o que já existe,
-  // sem interferir no cache das outras abas nem marcar nada como lido: quem
-  // marca "avisos não lidos" como lidos continua sendo só a aba Mural, ao
-  // abrir de fato o feed (aqui é só um resumo, pra não "gastar" a leitura só
-  // de dar uma olhada no Início).
-  const tarefasQuery = useQuery({
-    queryKey: ["mural-inicio-tarefas", access.userId],
-    enabled: !!access.userId,
-    queryFn: async () => {
-      const { data, error } = await supabase.from("mural_tarefas").select("id, feita");
-      if (error) throw error;
-      return data as TarefaResumo[];
-    },
-  });
+  // Hooks compartilhados com a bolinha das abas (mesmas chaves de cache que
+  // a aba Mural/Minhas Tarefas já usam) — ver src/lib/mural-contadores.ts.
+  // Só LEEM o que já existe: abrir o Início nunca marca nada como lido —
+  // isso só acontece de fato quando a pessoa clica numa mensagem específica
+  // (abaixo) ou abre a aba Mural de verdade.
+  const { avisos, loading: avisosLoading, naoLidosCount, jaLi } = useResumoAvisos(access.userId);
+  const { count: pendentesCount, loading: tarefasLoading } = useTarefasPendentesCount(access.userId);
+  const marcarLida = useMarcarAvisoLido(access.userId);
 
-  const avisosQuery = useQuery({
-    queryKey: ["mural-inicio-avisos"],
-    enabled: !!access.userId,
-    refetchInterval: 20_000,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("mural_avisos")
-        .select("id, autor_id, autor_nome, texto, criado_em")
-        .order("fixado", { ascending: false })
-        .order("criado_em", { ascending: false })
-        .limit(5);
-      if (error) throw error;
-      return data as AvisoResumo[];
-    },
-  });
-
-  const avisosIdsKey = useMemo(
-    () => (avisosQuery.data ?? []).map((a) => a.id).join(","),
-    [avisosQuery.data],
-  );
-
-  // Quais desses últimos avisos eu (o usuário logado) já li — a mesma tabela
-  // que a aba Mural usa pra marcar leitura, só que aqui filtrando só a minha
-  // linha, já que aqui não precisamos saber quem mais leu.
-  const leiturasQuery = useQuery({
-    queryKey: ["mural-inicio-leituras", avisosIdsKey, access.userId],
-    enabled: !!access.userId && (avisosQuery.data?.length ?? 0) > 0,
-    refetchInterval: 20_000,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("mural_aviso_leituras")
-        .select("aviso_id")
-        .eq("user_id", access.userId as string)
-        .in("aviso_id", (avisosQuery.data ?? []).map((a) => a.id));
-      if (error) throw error;
-      return new Set((data ?? []).map((r) => r.aviso_id));
-    },
-  });
-
-  const tarefas = tarefasQuery.data ?? [];
-  const pendentesCount = tarefas.filter((t) => !t.feita).length;
-
-  const avisos = avisosQuery.data ?? [];
-  const lidos = leiturasQuery.data ?? new Set<string>();
-  // "Não lido" = não fui eu que postei e ainda não tem registro de leitura —
-  // é exatamente o mesmo critério que a aba Mural usa pra marcar como lido
-  // assim que a lista carrega lá.
-  const naoLidosCount = avisos.filter((a) => a.autor_id !== access.userId && !lidos.has(a.id)).length;
-
+  const ultimosAvisos = avisos.slice(0, 5);
   const primeiroNomeUsuario = primeiroNome(access.nome || "");
+
+  function abrirAviso(avisoId: string, autorId: string) {
+    if (autorId !== access.userId) marcarLida.mutate(avisoId);
+    onNavigate("mural");
+  }
 
   return (
     <div className="space-y-6">
@@ -132,7 +70,7 @@ export function InicioTab({
           <div className="flex-1 min-w-0">
             <p className="text-sm text-muted-foreground">Minhas tarefas</p>
             <p className="font-bold text-base">
-              {tarefasQuery.isLoading ? "…" : `${pendentesCount} ${pendentesCount === 1 ? "tarefa pendente" : "tarefas pendentes"}`}
+              {tarefasLoading ? "…" : `${pendentesCount} ${pendentesCount === 1 ? "tarefa pendente" : "tarefas pendentes"}`}
             </p>
           </div>
           <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -150,7 +88,7 @@ export function InicioTab({
           <div className="flex-1 min-w-0">
             <p className="text-sm text-muted-foreground">Avisos não lidos</p>
             <p className="font-bold text-base">
-              {avisosQuery.isLoading
+              {avisosLoading
                 ? "…"
                 : naoLidosCount === 0
                   ? "Tudo em dia"
@@ -164,21 +102,18 @@ export function InicioTab({
       <div>
         <p className="text-xs uppercase text-muted-foreground mb-2">Últimos avisos</p>
 
-        {avisosQuery.isLoading && (
-          <p className="text-sm text-muted-foreground text-center py-6">Carregando...</p>
-        )}
-        {!avisosQuery.isLoading && avisos.length === 0 && (
+        {avisosLoading && <p className="text-sm text-muted-foreground text-center py-6">Carregando...</p>}
+        {!avisosLoading && ultimosAvisos.length === 0 && (
           <p className="text-sm text-muted-foreground text-center py-6">Nenhum aviso ainda.</p>
         )}
 
         <div className="space-y-2">
-          {avisos.map((aviso) => {
-            const souAutor = aviso.autor_id === access.userId;
-            const lido = souAutor || lidos.has(aviso.id);
+          {ultimosAvisos.map((aviso) => {
+            const lido = jaLi(aviso.id, aviso.autor_id);
             return (
               <button
                 key={aviso.id}
-                onClick={() => onNavigate("mural")}
+                onClick={() => abrirAviso(aviso.id, aviso.autor_id)}
                 className="panel p-3 w-full text-left flex items-start gap-3"
               >
                 <Avatar style={{ boxShadow: `0 0 0 2px ${corDoUsuario(aviso.autor_id)}` }} className="shrink-0">

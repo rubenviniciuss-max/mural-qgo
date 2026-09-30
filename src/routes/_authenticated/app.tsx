@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
 import { useMyAccess } from "@/lib/permissions";
+import { useResumoAvisos, useTarefasPendentesCount } from "@/lib/mural-contadores";
 import { currentPermission, enablePush, hasActivePushSubscription, pushSupported } from "@/lib/push-client";
 import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,13 @@ function AppPage() {
   // Controlado (em vez de "defaultValue" solto) pra dar pra navegar pra uma
   // aba a partir de um clique nos balões da tela de Início.
   const [aba, setAba] = useState("inicio");
+
+  // Mesmos contadores usados nos balões do Início — aqui só pra desenhar a
+  // bolinha de quantidade em cima das abas, visível mesmo quando a pessoa
+  // não está na aba Início. Compartilham cache com as abas Mural/Minhas
+  // Tarefas (ver src/lib/mural-contadores.ts), então não duplica consulta.
+  const { naoLidosCount } = useResumoAvisos(access.userId);
+  const { count: tarefasPendentesCount } = useTarefasPendentesCount(access.userId);
 
   // Antes, isso só mostrava o banner quando a permissão nunca tinha sido
   // pedida ("default"). Só que a inscrição de push pode morrer sozinha —
@@ -128,8 +136,14 @@ function AppPage() {
         <Tabs value={aba} onValueChange={setAba}>
           <TabsList>
             <TabsTrigger value="inicio">Início</TabsTrigger>
-            <TabsTrigger value="mural">Mural</TabsTrigger>
-            <TabsTrigger value="tarefas">Minhas Tarefas</TabsTrigger>
+            <TabsTrigger value="tarefas" className="gap-1.5">
+              Minhas Tarefas
+              <ContadorBolinha count={tarefasPendentesCount} />
+            </TabsTrigger>
+            <TabsTrigger value="mural" className="gap-1.5">
+              Mural
+              <ContadorBolinha count={naoLidosCount} />
+            </TabsTrigger>
             <TabsTrigger value="config">
               <Settings2 className="w-3.5 h-3.5" /> Configurações
             </TabsTrigger>
@@ -137,11 +151,11 @@ function AppPage() {
           <TabsContent value="inicio">
             <InicioTab access={access} onNavigate={setAba} />
           </TabsContent>
-          <TabsContent value="mural">
-            <MuralTab access={access} />
-          </TabsContent>
           <TabsContent value="tarefas">
             {access.userId && <TarefasTab userId={access.userId} />}
+          </TabsContent>
+          <TabsContent value="mural">
+            <MuralTab access={access} />
           </TabsContent>
           <TabsContent value="config">
             <ConfiguracoesTab access={access} />
@@ -149,5 +163,16 @@ function AppPage() {
         </Tabs>
       </main>
     </div>
+  );
+}
+
+// Bolinha de quantidade em cima das abas (Minhas Tarefas / Mural) — mesmo
+// visual usado nos balões da tela de Início. Some sozinha quando zera.
+function ContadorBolinha({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full btn-gold text-[10px] font-bold leading-none">
+      {count > 99 ? "99+" : count}
+    </span>
   );
 }

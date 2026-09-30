@@ -36,38 +36,56 @@ async function dispararPushParaUsuarios(
 
   const { sendWebPush } = await import("@/lib/webpush.server");
 
-  const { data: subs, error } = await supabaseAdmin
-    .from("mural_push_subscriptions")
-    .select("id, endpoint, p256dh, auth, user_id")
-    .in("user_id", userIds);
+  // As duas consultas não dependem uma da outra — rodar em paralelo em vez
+  // de uma depois da outra economiza uma ida-e-volta ao banco, o que ajuda
+  // a mandar o push mais rápido (parte do "demora pra enviar" reportado).
+  const [{ data: subs, error }, { data: usuariosAtivos }] = await Promise.all([
+    supabaseAdmin
+      .from("mural_push_subscriptions")
+      .select("id, endpoint, p256dh, auth, user_id")
+      .in("user_id", userIds),
+    supabaseAdmin.from("mural_usuarios").select("id, som_preferido").in("id", userIds),
+  ]);
   if (error) throw error;
 
-  const idsUnicos = Array.from(new Set((subs ?? []).map((s) => s.user_id)));
-  const { data: usuarios } = idsUnicos.length
-    ? await supabaseAdmin.from("mural_usuarios").select("id, som_preferido").in("id", idsUnicos)
-    : { data: [] as { id: string; som_preferido: string }[] };
-  const somPorUsuario = new Map((usuarios ?? []).map((u) => [u.id, u.som_preferido]));
+  const somPorUsuario = new Map(
+    ((usuariosAtivos ?? []) as { id: string; som_preferido: string }[]).map((u) => [u.id, u.som_preferido]),
+  );
 
   let sent = 0;
   let failed = 0;
 
   await Promise.all(
     (subs ?? []).map(async (sub) => {
-      try {
-        const som = somPorUsuario.get(sub.user_id) ?? "sino";
-        const result = await sendWebPush(
+      const som = somPorUsuario.get(sub.user_id) ?? "sino";
+      const enviar = () =>
+        sendWebPush(
           { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
           { ...payload, vibrate: VIBRA_POR_SOM[som] ?? VIBRA_POR_SOM.sino },
           { publicKey: VAPID_PUBLIC_KEY, privateKey: VAPID_PRIVATE_KEY, subject: VAPID_SUBJECT },
         );
+      try {
+        let result = await enviar();
         if (result.expired) {
           // Inscrição morta (navegador desinstalado, permissão revogada faz
           // tempo etc.) — limpa aqui pra não ficar tentando de novo pra
           // sempre, mesmo que a pessoa nunca mais abra o Mural.
           await supabaseAdmin.from("mural_push_subscriptions").delete().eq("id", sub.id);
+        } else if (!result.ok) {
+          // Falha que não é "inscrição morta" costuma ser algo passageiro no
+          // serviço de push (erro 5xx, limite momentâneo etc.) — tenta mais
+          // uma vez antes de desistir, em vez de simplesmente não notificar.
+          console.error("[mural] push falhou (status " + result.status + "), tentando de novo uma vez");
+          result = await enviar();
+          if (result.expired) {
+            await supabaseAdmin.from("mural_push_subscriptions").delete().eq("id", sub.id);
+          }
         }
         if (result.ok) sent++;
-        else failed++;
+        else {
+          failed++;
+          console.error("[mural] push falhou após nova tentativa (status " + result.status + ")");
+        }
       } catch (e) {
         console.error("[mural] falha ao enviar push", e);
         failed++;

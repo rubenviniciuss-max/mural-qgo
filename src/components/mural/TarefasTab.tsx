@@ -66,6 +66,9 @@ export function TarefasTab({ userId }: { userId: string }) {
     onSuccess: () => {
       setNovaTarefa("");
       qc.invalidateQueries({ queryKey: ["mural-minhas-tarefas", userId] });
+      // Atualiza a bolinha/balão de "tarefas pendentes" na hora, sem
+      // esperar o próximo refetch daquele contador.
+      qc.invalidateQueries({ queryKey: ["mural-tarefas-pendentes-count", userId] });
     },
     onError: (e: any) => toast.error(e.message),
   });
@@ -86,6 +89,7 @@ export function TarefasTab({ userId }: { userId: string }) {
       setNomeAbertura("");
       setMostrarAbertura(false);
       qc.invalidateQueries({ queryKey: ["mural-minhas-tarefas", userId] });
+      qc.invalidateQueries({ queryKey: ["mural-tarefas-pendentes-count", userId] });
     },
     onError: (e: any) => toast.error(e.message),
   });
@@ -95,7 +99,10 @@ export function TarefasTab({ userId }: { userId: string }) {
       const { error } = await supabase.from("mural_tarefas").update({ feita: !t.feita }).eq("id", t.id);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["mural-minhas-tarefas", userId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["mural-minhas-tarefas", userId] });
+      qc.invalidateQueries({ queryKey: ["mural-tarefas-pendentes-count", userId] });
+    },
     onError: (e: any) => toast.error(e.message),
   });
 
@@ -104,7 +111,10 @@ export function TarefasTab({ userId }: { userId: string }) {
       const { error } = await supabase.from("mural_tarefas").delete().eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["mural-minhas-tarefas", userId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["mural-minhas-tarefas", userId] });
+      qc.invalidateQueries({ queryKey: ["mural-tarefas-pendentes-count", userId] });
+    },
     onError: (e: any) => toast.error(e.message),
   });
 
