@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, Loader2, ChevronDown, ChevronRight, X, CheckCircle2, Pencil, Building2 } from "lucide-react";
+import { Plus, Trash2, Loader2, ChevronDown, ChevronRight, X, CheckCircle2, Pencil, Building2, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
@@ -26,6 +26,11 @@ type Tarefa = {
 // prontas, na ordem certa.
 const ETAPAS_ABERTURA = ["FAZER VIABILIDADE", "ASSINATURA", "INSCRIÇÃO MUNICIPAL", "PROCURAÇÃO"];
 
+// As 3 etapas padrão de todo certificado digital, na ordem em que o processo
+// de fato acontece — mesmo esquema da "abertura de empresa": o botão "Novo
+// certificado" já cria a tarefa com essas 3 etapas prontas.
+const ETAPAS_CERTIFICADO = ["PAGO", "ENVIADO NA CERTIFICADORA", "BAIXADO"];
+
 function etapasSeguras(valor: unknown): Etapa[] {
   if (!Array.isArray(valor)) return [];
   return valor
@@ -42,6 +47,8 @@ export function TarefasTab({ userId }: { userId: string }) {
   const [expandidas, setExpandidas] = useState<Set<string>>(new Set());
   const [mostrarAbertura, setMostrarAbertura] = useState(false);
   const [nomeAbertura, setNomeAbertura] = useState("");
+  const [mostrarCertificado, setMostrarCertificado] = useState(false);
+  const [nomeCertificado, setNomeCertificado] = useState("");
 
   const tarefasQuery = useQuery({
     queryKey: ["mural-minhas-tarefas", userId],
@@ -88,6 +95,26 @@ export function TarefasTab({ userId }: { userId: string }) {
     onSuccess: () => {
       setNomeAbertura("");
       setMostrarAbertura(false);
+      qc.invalidateQueries({ queryKey: ["mural-minhas-tarefas", userId] });
+      qc.invalidateQueries({ queryKey: ["mural-tarefas-pendentes-count", userId] });
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  // Cria a tarefa de "certificado" já com as 3 etapas padrão preenchidas,
+  // mesmo esquema da abertura de empresa acima.
+  const adicionarCertificado = useMutation({
+    mutationFn: async () => {
+      const nome = nomeCertificado.trim();
+      if (!nome) return;
+      const texto = `CERTIFICADO ${nome.toUpperCase()}`;
+      const etapas: Etapa[] = ETAPAS_CERTIFICADO.map((etapaTexto) => ({ texto: etapaTexto, concluida: false }));
+      const { error } = await supabase.from("mural_tarefas").insert({ user_id: userId, texto, etapas: etapas as any });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setNomeCertificado("");
+      setMostrarCertificado(false);
       qc.invalidateQueries({ queryKey: ["mural-minhas-tarefas", userId] });
       qc.invalidateQueries({ queryKey: ["mural-tarefas-pendentes-count", userId] });
     },
@@ -200,6 +227,39 @@ export function TarefasTab({ userId }: { userId: string }) {
       ) : (
         <Button variant="outline" size="sm" onClick={() => setMostrarAbertura(true)} className="gap-1.5">
           <Building2 className="w-4 h-4" /> Nova abertura de empresa
+        </Button>
+      )}
+
+      {mostrarCertificado ? (
+        <div className="panel p-3 space-y-2">
+          <p className="text-xs text-muted-foreground">
+            Cria a tarefa já com as 3 etapas de sempre: Pago, Enviado na certificadora e Baixado.
+          </p>
+          <div className="flex gap-2">
+            <Input
+              autoFocus
+              placeholder="Nome do cliente..."
+              value={nomeCertificado}
+              onChange={(e) => setNomeCertificado(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") adicionarCertificado.mutate();
+                if (e.key === "Escape") setMostrarCertificado(false);
+              }}
+            />
+            <Button
+              onClick={() => adicionarCertificado.mutate()}
+              disabled={adicionarCertificado.isPending || !nomeCertificado.trim()}
+            >
+              {adicionarCertificado.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Criar"}
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => setMostrarCertificado(false)}>
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button variant="outline" size="sm" onClick={() => setMostrarCertificado(true)} className="gap-1.5">
+          <ShieldCheck className="w-4 h-4" /> Novo certificado
         </Button>
       )}
 
