@@ -187,6 +187,60 @@ export const notifyNewComentario = createServerFn({ method: "POST" })
   });
 
 // ---------------------------------------------------------------
+// Relatório de lucro dos certificados — cada certificado tem custo de
+// R$ 170,00 e lucro de R$ 105,00 pra empresa; aqui soma esse lucro olhando
+// as tarefas "CERTIFICADO ..." de TODOS os colaboradores (não só de quem
+// está logado), porque o relatório é sobre o negócio como um todo, não só
+// as tarefas de uma pessoa. Por isso usa o cliente admin (service role) em
+// vez do cliente autenticado normal — "Minhas Tarefas" tem RLS que isola
+// cada colaborador às próprias tarefas, e aqui a gente precisa ver todas.
+// Um certificado conta como "pago" quando a etapa "PAGO" está concluída
+// (ver ETAPAS_CERTIFICADO em TarefasTab.tsx) — o lucro entra no relatório
+// na hora que a etapa é marcada, e some se for desmarcada.
+// ---------------------------------------------------------------
+const PREFIXO_CERTIFICADO = "CERTIFICADO ";
+const LUCRO_POR_CERTIFICADO = 105;
+
+export const relatorioLucroCertificados = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async () => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data, error } = await supabaseAdmin
+      .from("mural_tarefas")
+      .select("etapas")
+      .ilike("texto", `${PREFIXO_CERTIFICADO}%`);
+    if (error) throw error;
+
+    let totalPagos = 0;
+    const porMes = new Map<string, number>();
+
+    for (const tarefa of data ?? []) {
+      const etapas = Array.isArray((tarefa as any).etapas) ? (tarefa as any).etapas : [];
+      const pago = etapas.find(
+        (e: unknown) => !!e && typeof e === "object" && String((e as any).texto).toUpperCase() === "PAGO",
+      ) as { concluida?: boolean; concluida_em?: string } | undefined;
+      if (!pago?.concluida) continue;
+
+      totalPagos++;
+      const dataPago = typeof pago.concluida_em === "string" ? new Date(pago.concluida_em) : null;
+      const chave =
+        dataPago && !Number.isNaN(dataPago.getTime())
+          ? `${dataPago.getUTCFullYear()}-${String(dataPago.getUTCMonth() + 1).padStart(2, "0")}`
+          : "sem-data";
+      porMes.set(chave, (porMes.get(chave) ?? 0) + 1);
+    }
+
+    return {
+      totalPagos,
+      totalLucro: totalPagos * LUCRO_POR_CERTIFICADO,
+      porMes: Array.from(porMes.entries())
+        .sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0))
+        .map(([mes, quantidade]) => ({ mes, quantidade, lucro: quantidade * LUCRO_POR_CERTIFICADO })),
+    };
+  });
+
+// ---------------------------------------------------------------
 // Admin adiciona uma pessoa da equipe ao Mural pelo e-mail (a conta já
 // precisa existir no Supabase Auth compartilhado da QGO — por exemplo,
 // quem já tem login no Painel Operacional).

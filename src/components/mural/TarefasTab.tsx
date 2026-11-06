@@ -1,14 +1,32 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, Loader2, ChevronDown, ChevronRight, X, CheckCircle2, Pencil, Building2, ShieldCheck } from "lucide-react";
+import { useServerFn } from "@tanstack/react-start";
+import { Plus, Trash2, Loader2, ChevronDown, ChevronRight, X, CheckCircle2, Pencil, Building2, ShieldCheck, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
+import { relatorioLucroCertificados } from "@/lib/mural.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 
-type Etapa = { texto: string; concluida: boolean };
+/** "concluida_em" guarda quando a etapa foi marcada (ISO, preenchido no
+ *  clique) — null enquanto não concluída, e limpo de volta pra null se a
+ *  pessoa desmarcar. Hoje alimenta dois lugares: a data mostrada ao lado da
+ *  etapa (ex.: "ENVIADO NA CERTIFICADORA — no dia 06/11/2026") e, pra etapa
+ *  "PAGO" dos certificados, o relatório de lucro (relatorioLucroCertificados,
+ *  em mural.functions.ts). */
+type Etapa = { texto: string; concluida: boolean; concluida_em: string | null };
+
+function fmtBRL(valor: number): string {
+  return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function fmtDataBR(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("pt-BR");
+}
 
 type Tarefa = {
   id: string;
@@ -38,6 +56,7 @@ function etapasSeguras(valor: unknown): Etapa[] {
     .map((e) => ({
       texto: typeof e.texto === "string" ? e.texto : "",
       concluida: !!e.concluida,
+      concluida_em: typeof e.concluida_em === "string" ? e.concluida_em : null,
     }));
 }
 
@@ -88,7 +107,7 @@ export function TarefasTab({ userId }: { userId: string }) {
       const nome = nomeAbertura.trim();
       if (!nome) return;
       const texto = `ABERTURA ${nome.toUpperCase()}`;
-      const etapas: Etapa[] = ETAPAS_ABERTURA.map((etapaTexto) => ({ texto: etapaTexto, concluida: false }));
+      const etapas: Etapa[] = ETAPAS_ABERTURA.map((etapaTexto) => ({ texto: etapaTexto, concluida: false, concluida_em: null }));
       const { error } = await supabase.from("mural_tarefas").insert({ user_id: userId, texto, etapas: etapas as any });
       if (error) throw error;
     },
@@ -108,7 +127,7 @@ export function TarefasTab({ userId }: { userId: string }) {
       const nome = nomeCertificado.trim();
       if (!nome) return;
       const texto = `CERTIFICADO ${nome.toUpperCase()}`;
-      const etapas: Etapa[] = ETAPAS_CERTIFICADO.map((etapaTexto) => ({ texto: etapaTexto, concluida: false }));
+      const etapas: Etapa[] = ETAPAS_CERTIFICADO.map((etapaTexto) => ({ texto: etapaTexto, concluida: false, concluida_em: null }));
       const { error } = await supabase.from("mural_tarefas").insert({ user_id: userId, texto, etapas: etapas as any });
       if (error) throw error;
     },
@@ -161,9 +180,25 @@ export function TarefasTab({ userId }: { userId: string }) {
       const { error } = await supabase.from("mural_tarefas").update({ etapas: etapas as any }).eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["mural-minhas-tarefas", userId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["mural-minhas-tarefas", userId] });
+      // Qualquer etapa pode ter mudado (inclusive "PAGO" de um certificado),
+      // e essa consulta é leve — mais simples invalidar sempre do que
+      // descobrir aqui se a etapa alterada era mesmo a de pagamento.
+      qc.invalidateQueries({ queryKey: ["mural-lucro-certificados"] });
+    },
     onError: (e: any) => toast.error(e.message),
   });
+
+  // Relatório de lucro dos certificados — soma de TODOS os colaboradores
+  // (não só o que está logado), por isso não depende de userId. Atualiza
+  // sozinho quando qualquer etapa é marcada/desmarcada (ver salvarEtapas).
+  const relatorioLucroFn = useServerFn(relatorioLucroCertificados);
+  const lucroQuery = useQuery({
+    queryKey: ["mural-lucro-certificados"],
+    queryFn: () => relatorioLucroFn(),
+  });
+  const lucro = lucroQuery.data;
 
   function toggleExpandida(id: string) {
     setExpandidas((atual) => {
@@ -183,6 +218,8 @@ export function TarefasTab({ userId }: { userId: string }) {
       <p className="text-sm text-muted-foreground">
         Suas anotações pessoais — só você vê essa lista. Abra uma tarefa pra dividir em etapas.
       </p>
+
+      <LucroCertificadosCard lucro={lucro} loading={lucroQuery.isLoading} />
 
       <div className="flex gap-2">
         <Input
@@ -305,6 +342,84 @@ export function TarefasTab({ userId }: { userId: string }) {
   );
 }
 
+type LucroCertificados = {
+  totalPagos: number;
+  totalLucro: number;
+  porMes: { mes: string; quantidade: number; lucro: number }[];
+};
+
+const NOMES_MES = [
+  "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+  "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+];
+
+/** "2026-11" -> "novembro/2026". */
+function fmtMes(chave: string): string {
+  const m = chave.match(/^(\d{4})-(\d{2})$/);
+  if (!m) return "sem data";
+  const idx = Number(m[2]) - 1;
+  return `${NOMES_MES[idx] ?? m[2]}/${m[1]}`;
+}
+
+/** Card de lucro dos certificados — soma de todos os colaboradores (ver
+ *  relatorioLucroCertificados). Cada certificado vendido custa R$ 170,00 e
+ *  dá R$ 105,00 de lucro; o card conta quantos já foram marcados como
+ *  "Pago" e o total acumulado, com o detalhe por mês escondido atrás de um
+ *  "ver por mês" pra não poluir a tela por padrão. */
+function LucroCertificadosCard({
+  lucro,
+  loading,
+}: {
+  lucro: LucroCertificados | undefined;
+  loading: boolean;
+}) {
+  const [verPorMes, setVerPorMes] = useState(false);
+
+  if (loading && !lucro) {
+    return <div className="panel p-3 text-xs text-muted-foreground">Carregando lucro dos certificados...</div>;
+  }
+  if (!lucro) return null;
+
+  return (
+    <div className="panel p-3 space-y-2">
+      <div className="flex items-center gap-2">
+        <TrendingUp className="w-4 h-4 text-success shrink-0" />
+        <div className="flex-1">
+          <p className="text-xs text-muted-foreground">Lucro com certificados (todos os colaboradores)</p>
+          <p className="text-lg font-semibold text-success">{fmtBRL(lucro.totalLucro)}</p>
+        </div>
+        <p className="text-xs text-muted-foreground shrink-0">
+          {lucro.totalPagos} {lucro.totalPagos === 1 ? "certificado pago" : "certificados pagos"}
+        </p>
+      </div>
+
+      {lucro.porMes.length > 0 && (
+        <div>
+          <button
+            className="text-xs text-muted-foreground underline"
+            onClick={() => setVerPorMes((v) => !v)}
+          >
+            {verPorMes ? "Esconder por mês" : "Ver por mês"}
+          </button>
+          {verPorMes && (
+            <div className="mt-2 space-y-1">
+              {lucro.porMes.map((m) => (
+                <div key={m.mes} className="flex items-center justify-between text-xs">
+                  <span className="capitalize text-muted-foreground">{fmtMes(m.mes)}</span>
+                  <span>
+                    {m.quantidade} {m.quantidade === 1 ? "certificado" : "certificados"} —{" "}
+                    <span className="font-medium">{fmtBRL(m.lucro)}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TarefaRow({
   tarefa,
   expandida,
@@ -345,12 +460,17 @@ function TarefaRow({
   function adicionarEtapa() {
     const texto = novaEtapa.trim();
     if (!texto) return;
-    onSalvarEtapas([...tarefa.etapas, { texto, concluida: false }]);
+    onSalvarEtapas([...tarefa.etapas, { texto, concluida: false, concluida_em: null }]);
     setNovaEtapa("");
   }
 
+  // Ao marcar, grava a data/hora de agora (concluida_em) — é o que alimenta
+  // a data mostrada ao lado da etapa e, pra etapa "PAGO" de um certificado,
+  // o relatório de lucro. Ao desmarcar, limpa a data de volta.
   function alternarConcluidaEtapa(idx: number) {
-    const proximo = tarefa.etapas.map((e, i) => (i === idx ? { ...e, concluida: !e.concluida } : e));
+    const proximo = tarefa.etapas.map((e, i) =>
+      i === idx ? { ...e, concluida: !e.concluida, concluida_em: !e.concluida ? new Date().toISOString() : null } : e,
+    );
     onSalvarEtapas(proximo);
   }
 
@@ -440,6 +560,9 @@ function TarefaRow({
                     className={`flex-1 text-sm ${etapa.concluida ? "line-through text-success" : ""}`}
                   >
                     {etapa.texto}
+                    {etapa.concluida && etapa.concluida_em && (
+                      <span className="no-underline text-xs text-muted-foreground"> — no dia {fmtDataBR(etapa.concluida_em)}</span>
+                    )}
                   </span>
                   <button onClick={() => removerEtapa(idx)}>
                     <X className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
